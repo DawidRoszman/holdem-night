@@ -138,6 +138,7 @@ if (require.main === module) {
       botDelayMs: Number(process.env.BOT_DELAY_MS) || 700,
       nextHandDelayMs: Number(process.env.NEXT_HAND_DELAY_MS) || 5000,
       turnTimeoutMs: Number(process.env.TURN_TIMEOUT_MS) || 30000,
+      reconnectGraceMs: Number(process.env.RECONNECT_GRACE_MS ?? 60000),
     },
   });
   server.listen(port, () => {

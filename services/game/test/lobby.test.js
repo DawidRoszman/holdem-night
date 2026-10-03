@@ -62,7 +62,7 @@ test('clients must say hello before anything else', async () => {
   await lobby.handle('c1', { type: 'listTables' });
   assert.match(last('c1', 'error').message, /hello/);
   await lobby.handle('c1', { type: 'hello', name: 'Alice' });
-  assert.deepEqual(last('c1', 'welcome'), { type: 'welcome', playerId: 'c1', name: 'Alice', timing: { turnTimeoutMs: 0, nextHandDelayMs: 5 } });
+  assert.deepEqual(last('c1', 'welcome'), { type: 'welcome', playerId: 'c1', name: 'Alice', timing: { turnTimeoutMs: 0, nextHandDelayMs: 5, reconnectGraceMs: 0 } });
   await lobby.handle('c1', { nope: true });
   assert.match(last('c1', 'error').message, /Invalid message/);
   await lobby.handle('c1', { type: 'teleport' });
@@ -280,7 +280,7 @@ test('with accounts, hello takes a session token instead of a name', async () =>
   const { lobby, last } = setup({ accounts: bank });
   await connectUser(lobby, 'c1', 'ann');
   assert.deepEqual(last('c1', 'welcome'), {
-    type: 'welcome', playerId: 'c1', name: 'ANN', chips: 1500, timing: { turnTimeoutMs: 0, nextHandDelayMs: 5 },
+    type: 'welcome', playerId: 'c1', name: 'ANN', chips: 1500, timing: { turnTimeoutMs: 0, nextHandDelayMs: 5, reconnectGraceMs: 60000 },
   });
 
   await connectUser(lobby, 'c2', 'expired');
@@ -417,7 +417,7 @@ test('messages sent right after hello wait for the token check', async () => {
 
 test('disconnecting while a buy-in is at the bank pays it straight back', async () => {
   const bank = fakeBank({ ann: 1000 });
-  const { lobby } = setup({ accounts: bank });
+  const { lobby } = setup({ accounts: bank, reconnectGraceMs: 0 });
   await connectUser(lobby, 'c1', 'ann');
   const creating = lobby.handle('c1', { type: 'createTable', name: 'Gone' });
   const leaving = lobby.disconnect('c1');
@@ -534,7 +534,9 @@ test('players are told the turn clock and when the next hand is dealt', async ()
   await lobby.handle('c1', { type: 'createTable', name: 'T' });
   await lobby.handle('c2', { type: 'joinTable', tableId: last('c1', 'state').table.id });
   let { timing } = last('c1', 'state').table;
-  assert.deepEqual(timing, { turnTimeoutMs: 5000, nextHandDelayMs: 4000, turnEndsIn: null, nextHandIn: null });
+  assert.deepEqual(timing, {
+    turnTimeoutMs: 5000, nextHandDelayMs: 4000, reconnectGraceMs: 0, turnEndsIn: null, nextHandIn: null,
+  });
 
   await lobby.handle('c1', { type: 'startGame' });
   timing = last('c2', 'state').table.timing;
@@ -560,4 +562,77 @@ test('the turn clock keeps running when someone else joins the table', async () 
   assert.equal(last('c1', 'notice').message, 'Time ran out, so you folded');
   assert.equal(all('c2', 'notice').length, 0);
   lobby.shutdown();
+});
+
+test('a logged-in player who reloads gets their seat, cards and turn clock back', async () => {
+  const bank = fakeBank({ ann: 1000, bob: 1000 });
+  const { lobby, last } = setup({ accounts: bank, turnTimeoutMs: 5000 });
+  await connectUser(lobby, 'c1', 'ann');
+  await connectUser(lobby, 'c2', 'bob');
+  await lobby.handle('c1', { type: 'createTable', name: 'Home Game' });
+  const tableId = last('c1', 'state').table.id;
+  await lobby.handle('c2', { type: 'joinTable', tableId });
+  await lobby.handle('c1', { type: 'startGame' });
+  const before = last('c1', 'state').table;
+  assert.ok(before.you.legal, "it is Ann's turn");
+
+  await lobby.disconnect('c1');
+  const seen = last('c2', 'state').table;
+  assert.equal(seen.seats[0].away, true, 'the others see the seat as away');
+  assert.match(seen.log.at(-1), /ANN lost connection, seat held for 60s/);
+  assert.equal(lobby.tables.size, 1);
+  assert.equal(bank.games.length, 0, 'nothing is cashed out yet');
+
+  await wait(50);
+  await connectUser(lobby, 'c3', 'ann');
+  const back = last('c3', 'state').table;
+  assert.equal(back.id, tableId);
+  assert.equal(back.you.seat, 0);
+  assert.deepEqual(back.seats[0].cards, before.seats[0].cards);
+  assert.equal(back.seats[0].away, false);
+  assert.equal(back.you.isHost, true);
+  assert.ok(back.timing.turnEndsIn < 4960, 'the turn clock kept running');
+  assert.match(last('c3', 'notice').message, /still seated at Home Game/);
+  await lobby.handle('c3', { type: 'action', action: 'fold' });
+  assert.equal(last('c3', 'error'), undefined);
+  lobby.shutdown();
+});
+
+test('a held seat is released, and its stack paid back, when the player does not return', async () => {
+  const bank = fakeBank({ ann: 1000, bob: 1000 });
+  const { lobby, last } = setup({ accounts: bank, reconnectGraceMs: 40 });
+  await connectUser(lobby, 'c1', 'ann');
+  await connectUser(lobby, 'c2', 'bob');
+  await lobby.handle('c1', { type: 'createTable', name: 'T', buyIn: 500 });
+  await lobby.handle('c2', { type: 'joinTable', tableId: last('c1', 'state').table.id });
+  await lobby.disconnect('c1');
+  assert.equal(bank.balances.get('ann'), 500);
+  await until(() => bank.balances.get('ann') === 1000);
+  assert.equal(last('c2', 'state').table.seats.filter(Boolean).length, 1);
+  assert.equal(last('c2', 'state').table.you.isHost, true, 'Bob hosts the table now');
+
+  // coming back too late just lands in the lobby
+  await connectUser(lobby, 'c3', 'ann');
+  assert.equal(last('c3', 'state'), undefined);
+  assert.equal(last('c3', 'notice'), undefined);
+  lobby.shutdown();
+});
+
+test('guests and players who leave on purpose do not keep their seat', async () => {
+  const bank = fakeBank({ ann: 1000 });
+  const { lobby, last } = setup({ accounts: bank });
+  await connectUser(lobby, 'c1', 'ann');
+  await lobby.handle('c1', { type: 'createTable', name: 'T', mode: 'bot' });
+  await lobby.handle('c1', { type: 'leaveTable' });
+  await lobby.disconnect('c1');
+  await connectUser(lobby, 'c2', 'ann');
+  assert.equal(last('c2', 'state'), undefined);
+  lobby.shutdown();
+
+  const guests = setup();
+  await connectNamed(guests.lobby, 'g1', 'Gus');
+  await guests.lobby.handle('g1', { type: 'createTable', name: 'G' });
+  await guests.lobby.disconnect('g1');
+  assert.equal(guests.lobby.tables.size, 0, 'guests have no account to come back as');
+  guests.lobby.shutdown();
 });

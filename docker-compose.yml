@@ -28,6 +28,7 @@ services:
       BOT_DELAY_MS: ${BOT_DELAY_MS:-700}
       NEXT_HAND_DELAY_MS: ${NEXT_HAND_DELAY_MS:-5000}
       TURN_TIMEOUT_MS: ${TURN_TIMEOUT_MS:-30000}
+      RECONNECT_GRACE_MS: ${RECONNECT_GRACE_MS:-60000}
     # gives the game time to pay table chips back to the bank on shutdown
     stop_grace_period: 15s
     depends_on:

@@ -125,6 +125,7 @@ class Table {
       allIn: false,
       acted: false,
       leaving: false,
+      away: false, // lost connection; the seat is held for them
       // for the player's game history
       joinedAt,
       totalBuyIn: chips,
@@ -170,6 +171,25 @@ class Table {
       if (next) this.addLog(`${next.name} is now the host`);
     }
     this.onEvent('removed', p);
+  }
+
+  // Moves a seat to a player's new connection id, e.g. after they reload the page.
+  rebind(oldId, newId) {
+    const p = this.findPlayer(oldId);
+    if (!p) return null;
+    p.id = newId;
+    if (this.hostId === oldId) this.hostId = newId;
+    const r = this.lastResult;
+    if (r) {
+      for (const byId of [r.shown, r.deltas]) {
+        if (byId && oldId in byId) {
+          byId[newId] = byId[oldId];
+          delete byId[oldId];
+        }
+      }
+      for (const w of [...r.winners, ...(r.busted || [])]) if (w.id === oldId) w.id = newId;
+    }
+    return p;
   }
 
   get host() {
@@ -612,6 +632,7 @@ class Table {
           inHand: p.inHand,
           folded: p.folded,
           allIn: p.allIn,
+          away: p.away,
           busted: this.isBusted(p),
           cards,
         };

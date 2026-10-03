@@ -464,3 +464,23 @@ test('a host who leaves mid-hand passes the table on once the hand ends', async 
   while (table.inProgress) await table.act(actor(table), 'fold');
   assert.equal(table.hostId, 'b');
 });
+
+test('a seat can move to a new connection id, keeping hand, host and result', async () => {
+  // the fake evaluator ranks by id: a2 is who 'a' becomes before the showdown
+  const table = makeTable(['a', 'b'], { scores: { a2: 2, b: 1 } });
+  table.start('a');
+  await table.startHand();
+  const hole = table.findPlayer('a').hole;
+  table.rebind('a', 'a2');
+  assert.equal(table.findPlayer('a'), null);
+  assert.deepEqual(table.view('a2').seats[0].cards, hole, 'still sees their own cards');
+  assert.equal(table.hostId, 'a2');
+  await table.act(actor(table), 'allin');
+  await table.act(actor(table), 'call');
+  table.rebind('a2', 'a3');
+  const { lastResult } = table.view('a3');
+  assert.equal(lastResult.winners[0].id, 'a3');
+  assert.equal(lastResult.deltas.a3, 1000);
+  assert.ok(lastResult.shown.a3);
+  assert.equal(table.rebind('nobody', 'x'), null);
+});

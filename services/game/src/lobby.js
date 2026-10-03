@@ -35,6 +35,7 @@ class Lobby {
     botDelayMs = 700,
     nextHandDelayMs = 3000,
     turnTimeoutMs = 30000,
+    reconnectGraceMs = 60000,
     tableOptions = {},
     newId = () => crypto.randomUUID(),
   }) {
@@ -45,6 +46,8 @@ class Lobby {
     this.botDelayMs = botDelayMs;
     this.nextHandDelayMs = nextHandDelayMs;
     this.turnTimeoutMs = turnTimeoutMs;
+    // how long a logged-in player's seat is held after their connection drops (0: leave at once)
+    this.reconnectGraceMs = reconnectGraceMs;
     this.tableOptions = tableOptions;
     this.newId = newId;
     this.clients = new Map();
@@ -58,14 +61,61 @@ class Lobby {
   }
 
   // Runs after anything the client sent before closing, e.g. a buy-in still at the bank.
+  // A logged-in player keeps their seat for a while, so a page reload can pick it up again.
   disconnect(clientId) {
     const client = this.clients.get(clientId);
     if (!client) return Promise.resolve();
     client.inbox = client.inbox.then(async () => {
-      if (client.tableId) await this.leaveTable(client);
+      if (client.tableId && !this.holdSeat(client)) await this.leaveTable(client);
       this.clients.delete(clientId);
     });
     return client.inbox;
+  }
+
+  // Marks a dropped player's seat as away and releases it after the grace period. Returns false
+  // when the seat can't be held (guest mode, holding turned off, or the player is already leaving).
+  holdSeat(client) {
+    const entry = this.tables.get(client.tableId);
+    const p = entry && entry.table.findPlayer(client.id);
+    if (!this.accounts || !client.userId || this.reconnectGraceMs <= 0 || !p || p.leaving) return false;
+    client.tableId = null;
+    p.away = true;
+    entry.table.addLog(`${p.name} lost connection, seat held for ${Math.round(this.reconnectGraceMs / 1000)}s`);
+    entry.away.set(p.userId, setTimeout(() => this.releaseSeat(entry, p), this.reconnectGraceMs));
+    this.afterChange(entry);
+    return true;
+  }
+
+  // The grace period ran out: the player leaves (their stack goes back to the bank).
+  releaseSeat(entry, p) {
+    entry.away.delete(p.userId);
+    if (!this.tables.has(entry.table.id)) return;
+    // checked again when it runs: the player may have come back in the meantime
+    this.enqueue(entry, () => p.away && entry.table.removePlayer(p.id)).then(() => this.afterChange(entry));
+  }
+
+  // Gives a held seat back to the player on their new connection.
+  async reclaimSeat(client) {
+    for (const entry of this.tables.values()) {
+      const p = entry.table.players.find((o) => o.userId === client.userId && o.away);
+      if (!p) continue;
+      clearTimeout(entry.away.get(p.userId));
+      entry.away.delete(p.userId);
+      // between table operations, so a showdown in progress never sees the id change;
+      // the seat may have been released just before
+      let back = false;
+      await this.enqueue(entry, () => {
+        if (!p.away || !entry.table.rebind(p.id, client.id)) return;
+        p.away = false;
+        back = true;
+        entry.table.addLog(`${p.name} is back`);
+      });
+      if (!back || !this.clients.has(client.id)) return;
+      client.tableId = entry.table.id;
+      this.send(client.id, { type: 'notice', message: `Welcome back: you're still seated at ${entry.table.name}` });
+      this.afterChange(entry);
+      return;
+    }
   }
 
   // Messages from one client are processed in order: a hello that is still
@@ -142,6 +192,7 @@ class Lobby {
       this.send(client.id, { type: 'welcome', playerId: client.id, name: client.name, timing: this.rules() });
     }
     this.send(client.id, { type: 'tables', tables: this.tableList() });
+    if (client.userId) await this.reclaimSeat(client);
   }
 
   // ---------------------------------------------------------------- bank
@@ -227,7 +278,8 @@ class Lobby {
     if (!MODES.includes(mode)) throw new GameError('Choose a normal or a practice table');
     const id = this.newId().slice(0, 8);
     // due: when each running timer fires; turnKey: whose turn the 'turn'/'bot' timer is for
-    const entry = { table: null, queue: Promise.resolve(), timers: {}, due: {}, turnKey: null, bots: 0 };
+    // away: userId -> timer releasing a disconnected player's held seat
+    const entry = { table: null, queue: Promise.resolve(), timers: {}, due: {}, turnKey: null, away: new Map(), bots: 0 };
     entry.table = new Table({
       id,
       name: cleanName(rawName, `${client.name}'s table`),
@@ -387,7 +439,12 @@ class Lobby {
 
   // How long a turn lasts (0: no limit) and the pause between hands.
   rules() {
-    return { turnTimeoutMs: this.turnTimeoutMs, nextHandDelayMs: this.nextHandDelayMs };
+    return {
+      turnTimeoutMs: this.turnTimeoutMs,
+      nextHandDelayMs: this.nextHandDelayMs,
+      // only logged-in players can come back to a seat
+      reconnectGraceMs: this.accounts ? this.reconnectGraceMs : 0,
+    };
   }
 
   // Timings shown at a table: the rules, plus the countdowns running right now.
@@ -401,6 +458,8 @@ class Lobby {
 
   destroyTable(entry) {
     for (const name of Object.keys(entry.timers)) this.clearTimer(entry, name);
+    for (const timer of entry.away.values()) clearTimeout(timer);
+    entry.away.clear();
     this.tables.delete(entry.table.id);
   }
 
@@ -418,7 +477,8 @@ class Lobby {
     // A turn's clock starts once: other changes at the table (someone joining,
     // leaving or rebuying) don't give the player to act more time.
     const current = table.seats[table.toAct];
-    const turnKey = table.inProgress && current ? `${table.handNumber}:${table.stage}:${table.toAct}:${current.id}` : null;
+    // keyed by seat, not connection: a player reconnecting mid-turn keeps the same clock
+    const turnKey = table.inProgress && current ? `${table.handNumber}:${table.stage}:${table.toAct}` : null;
     if (turnKey !== entry.turnKey) {
       entry.turnKey = turnKey;
       this.clearTimer(entry, 'bot');
@@ -426,7 +486,7 @@ class Lobby {
       if (turnKey && current.isBot) {
         this.setTimer(entry, 'bot', this.botDelayMs, () => this.runBot(entry, current.id));
       } else if (turnKey && this.turnTimeoutMs > 0) {
-        this.setTimer(entry, 'turn', this.turnTimeoutMs, () => this.autoAct(entry, current.id));
+        this.setTimer(entry, 'turn', this.turnTimeoutMs, () => this.autoAct(entry, turnKey));
       }
     }
     // between hands of a started game: after a pause to show the result, clear out busted bots and deal again
@@ -459,10 +519,11 @@ class Lobby {
   }
 
   // A human who runs out of time checks if possible, otherwise folds.
-  autoAct(entry, playerId) {
+  autoAct(entry, turnKey) {
     this.enqueue(entry, async () => {
       const p = entry.table.seats[entry.table.toAct];
-      if (!p || p.id !== playerId) return;
+      if (!p || entry.turnKey !== turnKey) return;
+      const playerId = p.id;
       const action = entry.table.legalActions(p).canCheck ? 'check' : 'fold';
       await entry.table.act(playerId, action);
       this.send(playerId, { type: 'notice', message: `Time ran out, so you ${action === 'check' ? 'checked' : 'folded'}` });
