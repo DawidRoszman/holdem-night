@@ -38,11 +38,17 @@ env:
 - tapOn:
     id: "raise-button"
 - extendedWaitUntil:
-    visible: ".*Raising Rae raises to 100.*"
+    visible: "Pot: 200"
     timeout: 5000
-- extendedWaitUntil:
-    visible: ".*Ada \\(bot\\) calls 80.*"
+# the hand log is below the table: scroll down to it, then back up to play on
+- scrollUntilVisible:
+    element: ".*Raising Rae raises to 100.*"
+    direction: DOWN
     timeout: 5000
-- assertVisible: "Pot: 200"
+- assertVisible: ".*Ada \\(bot\\) calls 80.*"
+- scrollUntilVisible:
+    element:
+      id: "pot"
+    direction: UP
 - runFlow: common/play_hand.yaml
 - tapOn: "Leave table"
