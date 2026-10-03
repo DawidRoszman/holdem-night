@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# a newer push to the same branch or PR replaces a run still in progress
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: Unit tests (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [accounts, evaluator, game]
+    defaults:
+      run:
+        working-directory: services/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          # node:sqlite (accounts) needs 22.13+; the images run Node 24
+          node-version: 24
+          cache: npm
+          cache-dependency-path: services/${{ matrix.service }}/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  web:
+    name: Web client build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: services/web/package-lock.json
+      - run: npm ci
+      # Tailwind CSS, the three.js table and the profile charts bundle
+      - run: npm run build
+
+  e2e:
+    name: End-to-end (Maestro, headless)
+    needs: [unit, web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      MAESTRO_VERSION: 2.11.0
+      # a fixed key for the throwaway CI stack
+      ACCOUNTS_INTERNAL_KEY: ci-internal-key
+    steps:
+      - uses: actions/checkout@v5
+      # remote-player.js uses Node's built-in WebSocket
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      # Maestro runs on the JVM; the runner's Google Chrome is its browser
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install Maestro
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+      - name: Build the stack
+        run: docker compose build
+      - name: Run the e2e suite
+        # run.sh starts the stack, the scripted remote player and Maestro (headless by default);
+        # KEEP_UP leaves the stack running so its logs can be collected below
+        env:
+          KEEP_UP: '1'
+        run: ./e2e/run.sh 2>&1 | tee e2e/run.log
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '### E2E flows'
+            grep -E '\[(Passed|Failed)\]|Flows? (Passed|Failed)' e2e/run.log | sed 's/^/- /' || echo 'No flow results: see the job log.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Collect service logs
+        if: failure()
+        run: docker compose logs --no-color > e2e/services.log
+      - name: Upload e2e results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          path: |
+            e2e/report.xml
+            e2e/run.log
+            e2e/services.log
+            ~/.maestro/tests/
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v

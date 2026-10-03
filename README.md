@@ -1,5 +1,7 @@
 # Hold'em Night — multiplayer Texas Hold'em microservices
 
+[![CI](https://github.com/DawidRoszman/holdem-night/actions/workflows/ci.yml/badge.svg)](https://github.com/DawidRoszman/holdem-night/actions/workflows/ci.yml)
+
 No-limit Texas Hold'em in the browser. Up to six players per table, real-time over WebSockets. Real-chip tables are for players only; practice tables add bots and use free chips. Each player has a profile with lifetime stats, charts and game history.
 
 ## Architecture
@@ -111,6 +113,18 @@ Create an account (or log in), buy chips in the lobby if you need more, and pick
 (cd services/game && npm ci && npm test)       # betting engine, side pots, lobby, table types, host start, turn clock, bank buy-ins/cash-outs, game stats, bots, WS server
 docker build --target test services/game      # same tests inside the image build (also accounts, evaluator)
 ```
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every push to `main`, on pull requests, and on demand:
+
+| Job | What it does |
+|---|---|
+| **Unit tests** | `npm ci && npm test` for accounts, evaluator and game, in parallel on Node 24 |
+| **Web client build** | `npm run build` for the CSS and JS bundles |
+| **End-to-end** | after both pass: builds the Docker stack and runs `./e2e/run.sh` (every flow, headless). The job summary lists each flow's result. If anything fails, the JUnit report, the run log, the services' logs and Maestro's screenshots and logs are uploaded as the `e2e-results` artifact |
+
+A newer push to the same branch or pull request cancels the run still in progress. There is no deployment step.
 
 ### End-to-end ([Maestro](https://maestro.dev) web flows)
 
