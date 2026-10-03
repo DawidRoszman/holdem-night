@@ -278,7 +278,9 @@
   .stat dd { @apply text-xl font-bold tabular-nums sm:text-2xl; }
   .stat dd.up { color: #1a5f96; }
   .stat dd.down { color: #a8401c; }
-  .stat .sub { @apply text-xs font-medium text-muted-foreground; }
+  /* its own line under the number, with compact spacing instead of the number's tall line height */
+  .stat .sub { @apply mt-1 block text-xs leading-snug font-medium text-muted-foreground; }
+  .stat .sub + .sub { @apply mt-0.5; }
 
   /* charts inherit the engraved ink for axes, grid and the balance line */
   .chart {
