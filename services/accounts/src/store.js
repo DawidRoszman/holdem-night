@@ -343,4 +343,4 @@ function settleUp(players) {
   return transfers;
 }
 
-module.exports = { Store, AccountError, hashPassword, verifyPassword, settleUp };
+module.exports = { Store, AccountError, hashPassword, verifyPassword, settleUp, SESSION_TTL_MS };

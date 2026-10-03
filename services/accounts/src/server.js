@@ -2,7 +2,10 @@
 
 const http = require('http');
 const crypto = require('crypto');
-const { Store, AccountError } = require('./store');
+const { Store, AccountError, SESSION_TTL_MS } = require('./store');
+
+// The browser keeps the session in an HttpOnly cookie, so page scripts never see the token.
+const SESSION_COOKIE = 'holdem_session';
 
 const MAX_BODY = 8 * 1024;
 // a finished game carries its hand log, up to 500 hands
@@ -16,13 +19,13 @@ const PASSWORD_MAX = 128;
 const LOGIN_ATTEMPTS = 5;
 const LOGIN_WINDOW_MS = 5 * 60 * 1000;
 
-function send(res, status, body) {
+function send(res, status, body, headers = {}) {
   if (body === undefined) {
-    res.writeHead(status);
+    res.writeHead(status, headers);
     res.end();
     return;
   }
-  res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...headers });
   res.end(JSON.stringify(body));
 }
 
@@ -52,6 +55,30 @@ function readJson(req, limit = MAX_BODY) {
 function bearer(req) {
   const match = /^Bearer (\S+)$/.exec(req.headers.authorization || '');
   return match ? match[1] : null;
+}
+
+function cookie(req, name) {
+  for (const part of String(req.headers.cookie || '').split(';')) {
+    const eq = part.indexOf('=');
+    if (eq > 0 && part.slice(0, eq).trim() === name) return decodeURIComponent(part.slice(eq + 1).trim());
+  }
+  return null;
+}
+
+// The browser sends the session cookie; scripts and other clients may use a Bearer header instead.
+const sessionToken = (req) => cookie(req, SESSION_COOKIE) || bearer(req);
+
+// HttpOnly: no page script can read it. SameSite=Strict: other sites can't make requests,
+// or open the game's WebSocket, with it. Secure: only over HTTPS (browsers also allow localhost).
+function sessionCookie(token, { secure, maxAgeMs = SESSION_TTL_MS }) {
+  return [
+    `${SESSION_COOKIE}=${encodeURIComponent(token)}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Strict',
+    `Max-Age=${Math.floor(maxAgeMs / 1000)}`,
+    ...(secure ? ['Secure'] : []),
+  ].join('; ');
 }
 
 function sameSecret(a, b) {
@@ -127,7 +154,7 @@ function gameRecord(raw) {
  * Internal API for the game service (requires X-Internal-Key, never proxied):
  *   POST /internal/session, POST /internal/debit, POST /internal/credit, POST /internal/game
  */
-function createServer({ store = new Store(), internalKey, now = () => Date.now() } = {}) {
+function createServer({ store = new Store(), internalKey, now = () => Date.now(), cookieSecure = true } = {}) {
   if (!internalKey) throw new Error('internalKey is required');
   const failures = new Map(); // lower-cased username -> { count, since }
 
@@ -148,8 +175,14 @@ function createServer({ store = new Store(), internalKey, now = () => Date.now()
     else failures.set(key, { count: 1, since: now() });
   }
 
+  const signIn = (status, user) => [
+    status,
+    { user: publicUser(user) },
+    { 'Set-Cookie': sessionCookie(store.createSession(user.id), { secure: cookieSecure }) },
+  ];
+
   function requireUser(req) {
-    const user = store.userForToken(bearer(req));
+    const user = store.userForToken(sessionToken(req));
     if (!user) throw new AccountError(401, 'Please log in');
     return user;
   }
@@ -165,8 +198,7 @@ function createServer({ store = new Store(), internalKey, now = () => Date.now()
       if (password.length < PASSWORD_MIN || password.length > PASSWORD_MAX) {
         throw new AccountError(400, `Password must be at least ${PASSWORD_MIN} characters`);
       }
-      const user = await store.register(username, password);
-      return [201, { token: store.createSession(user.id), user: publicUser(user) }];
+      return signIn(201, await store.register(username, password));
     },
 
     'POST /login': async (req) => {
@@ -179,13 +211,13 @@ function createServer({ store = new Store(), internalKey, now = () => Date.now()
         throw new AccountError(401, 'Wrong username or password');
       }
       failures.delete(username.toLowerCase());
-      return [200, { token: store.createSession(user.id), user: publicUser(user) }];
+      return signIn(200, user);
     },
 
     'POST /logout': (req) => {
-      const token = bearer(req);
+      const token = sessionToken(req);
       if (token) store.deleteSession(token);
-      return [204];
+      return [204, undefined, { 'Set-Cookie': sessionCookie('', { secure: cookieSecure, maxAgeMs: 0 }) }];
     },
 
     'GET /me': (req) => [200, { ...publicUser(requireUser(req)), packs: CHIP_PACKS }],
@@ -240,8 +272,8 @@ function createServer({ store = new Store(), internalKey, now = () => Date.now()
       if (path.startsWith('/internal/') && !sameSecret(req.headers['x-internal-key'], internalKey)) {
         throw new AccountError(403, 'Forbidden');
       }
-      const [status, body] = await route(req, game && Number(game[1]));
-      send(res, status, body);
+      const [status, body, headers] = await route(req, game && Number(game[1]));
+      send(res, status, body, headers);
     } catch (err) {
       if (err instanceof AccountError) return send(res, err.status, { error: err.message });
       console.error(err);
@@ -259,7 +291,8 @@ if (require.main === module) {
     process.exit(1);
   }
   const store = new Store(dbPath, { welcomeChips: Number(process.env.WELCOME_CHIPS ?? 1000) });
-  const server = createServer({ store, internalKey });
+  // COOKIE_SECURE=false only for plain-HTTP setups other than localhost (e.g. a LAN address)
+  const server = createServer({ store, internalKey, cookieSecure: process.env.COOKIE_SECURE !== 'false' });
   server.listen(port, () => console.log(`accounts service listening on :${port} (db: ${dbPath})`));
   const stop = () => server.close(() => {
     store.close();
@@ -269,4 +302,4 @@ if (require.main === module) {
   process.on('SIGINT', stop);
 }
 
-module.exports = { createServer, CHIP_PACKS };
+module.exports = { createServer, CHIP_PACKS, SESSION_COOKIE };

@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createServer } = require('../src/server');
+const { createServer, SESSION_COOKIE } = require('../src/server');
 const { Store } = require('../src/store');
 
 const KEY = 'test-internal-key';
@@ -12,13 +12,17 @@ async function start(options = {}) {
   const server = createServer({ store, internalKey: KEY, ...options });
   await new Promise((resolve) => server.listen(0, resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
-  const call = async (method, path, { body, token, key } = {}) => {
+  // `token` is sent the way the browser sends it, as the session cookie; `bearer` the way scripts may
+  const call = async (method, path, { body, token, bearer, key } = {}) => {
     const headers = { 'Content-Type': 'application/json' };
-    if (token) headers.Authorization = `Bearer ${token}`;
+    if (token) headers.Cookie = `${SESSION_COOKIE}=${token}`;
+    if (bearer) headers.Authorization = `Bearer ${bearer}`;
     if (key) headers['X-Internal-Key'] = key;
     const res = await fetch(base + path, { method, headers, body: body && JSON.stringify(body) });
     const text = await res.text();
-    return { status: res.status, body: text ? JSON.parse(text) : null };
+    const setCookie = res.headers.get('set-cookie');
+    const match = setCookie && new RegExp(`${SESSION_COOKIE}=([^;]*)`).exec(setCookie);
+    return { status: res.status, body: text ? JSON.parse(text) : null, setCookie, token: match ? match[1] : null };
   };
   return { server, store, call };
 }
@@ -30,7 +34,11 @@ test('register, check balance, buy a pack and log out', async (t) => {
   const reg = await call('POST', '/register', { body: { username: '  Ann  Lee ', password: 'secret1' } });
   assert.equal(reg.status, 201);
   assert.deepEqual(reg.body.user, { username: 'Ann Lee', chips: 1000 });
-  const { token } = reg.body;
+  // the session comes as an HttpOnly cookie, never in the body
+  const { token } = reg;
+  assert.ok(token);
+  assert.equal(reg.body.token, undefined);
+  assert.match(reg.setCookie, new RegExp(`^${SESSION_COOKIE}=[^;]+; Path=/; HttpOnly; SameSite=Strict; Max-Age=604800; Secure$`));
 
   const me = await call('GET', '/me', { token });
   assert.equal(me.status, 200);
@@ -44,7 +52,9 @@ test('register, check balance, buy a pack and log out', async (t) => {
     ['purchase', 'welcome'],
   );
 
-  assert.equal((await call('POST', '/logout', { token })).status, 204);
+  const out = await call('POST', '/logout', { token });
+  assert.equal(out.status, 204);
+  assert.match(out.setCookie, new RegExp(`^${SESSION_COOKIE}=; .*Max-Age=0`), 'the cookie is cleared');
   assert.equal((await call('GET', '/me', { token })).status, 401);
   assert.equal((await call('POST', '/buy', { token, body: { amount: 500 } })).status, 401);
 });
@@ -69,7 +79,7 @@ test('login returns a new token and locks a name after repeated failures', async
   const ok = await call('POST', '/login', { body: { username: 'ann', password: 'secret1' } });
   assert.equal(ok.status, 200);
   assert.equal(ok.body.user.username, 'Ann');
-  assert.equal((await call('GET', '/me', { token: ok.body.token })).status, 200);
+  assert.equal((await call('GET', '/me', { token: ok.token })).status, 200);
 
   for (let i = 0; i < 5; i++) {
     const bad = await call('POST', '/login', { body: { username: 'Ann', password: 'nope!!' } });
@@ -82,17 +92,17 @@ test('login returns a new token and locks a name after repeated failures', async
 test('internal endpoints need the shared key', async (t) => {
   const { server, call } = await start();
   t.after(() => server.close());
-  const { body } = await call('POST', '/register', { body: { username: 'Ann', password: 'secret1' } });
-  assert.equal((await call('POST', '/internal/session', { body: { token: body.token } })).status, 403);
-  assert.equal((await call('POST', '/internal/session', { body: { token: body.token }, key: 'wrong' })).status, 403);
+  const { token } = await call('POST', '/register', { body: { username: 'Ann', password: 'secret1' } });
+  assert.equal((await call('POST', '/internal/session', { body: { token } })).status, 403);
+  assert.equal((await call('POST', '/internal/session', { body: { token }, key: 'wrong' })).status, 403);
 });
 
 test('the game service resolves sessions and moves chips to and from tables', async (t) => {
   const { server, call } = await start();
   t.after(() => server.close());
-  const { body } = await call('POST', '/register', { body: { username: 'Ann', password: 'secret1' } });
+  const { token } = await call('POST', '/register', { body: { username: 'Ann', password: 'secret1' } });
 
-  const session = await call('POST', '/internal/session', { key: KEY, body: { token: body.token } });
+  const session = await call('POST', '/internal/session', { key: KEY, body: { token } });
   assert.equal(session.status, 200);
   assert.equal(session.body.username, 'Ann');
   const userId = session.body.id;
@@ -113,8 +123,8 @@ test('the game service resolves sessions and moves chips to and from tables', as
 test('the game service settles games and the player sees them on their profile', async (t) => {
   const { server, call } = await start();
   t.after(() => server.close());
-  const { body } = await call('POST', '/register', { body: { username: 'Ann', password: 'secret1' } });
-  const { id: userId } = (await call('POST', '/internal/session', { key: KEY, body: { token: body.token } })).body;
+  const { token } = await call('POST', '/register', { body: { username: 'Ann', password: 'secret1' } });
+  const { id: userId } = (await call('POST', '/internal/session', { key: KEY, body: { token } })).body;
   await call('POST', '/internal/debit', { key: KEY, body: { userId, amount: 1000 } });
 
   const game = { mode: 'normal', tableName: 'Table A', buyIn: 1000, cashOut: 1250, hands: 4, handsWon: 1, biggestWin: 300, startedAt: 5 };
@@ -126,7 +136,7 @@ test('the game service settles games and the player sees them on their profile',
   assert.equal((await call('POST', '/internal/game', { body: { userId, amount: 5, game } })).status, 403);
 
   assert.equal((await call('GET', '/profile')).status, 401);
-  const profile = await call('GET', '/profile', { token: body.token });
+  const profile = await call('GET', '/profile', { token });
   assert.equal(profile.status, 200);
   assert.equal(profile.body.user.chips, 1250);
   assert.equal(profile.body.stats.normal.earned, 250);
@@ -135,30 +145,30 @@ test('the game service settles games and the player sees them on their profile',
 
   // the game in detail: only its own player can read it
   const gameId = profile.body.games[0].id;
-  const detail = await call('GET', `/games/${gameId}`, { token: body.token });
+  const detail = await call('GET', `/games/${gameId}`, { token });
   assert.equal(detail.status, 200);
   assert.equal(detail.body.game.tableName, 'Table A');
   assert.deepEqual(detail.body.players.map((p) => p.username), ['Ann']);
   assert.equal((await call('GET', `/games/${gameId}`)).status, 401);
-  assert.equal((await call('GET', '/games/999', { token: body.token })).status, 404);
-  assert.equal((await call('GET', '/games/abc', { token: body.token })).status, 404);
+  assert.equal((await call('GET', '/games/999', { token })).status, 404);
+  assert.equal((await call('GET', '/games/abc', { token })).status, 404);
   const other = await call('POST', '/register', { body: { username: 'Bob', password: 'secret1' } });
-  assert.equal((await call('GET', `/games/${gameId}`, { token: other.body.token })).status, 404);
+  assert.equal((await call('GET', `/games/${gameId}`, { token: other.token })).status, 404);
 });
 
 test('hand logs are validated, trimmed to known fields and may exceed the public body limit', async (t) => {
   const { server, call } = await start();
   t.after(() => server.close());
-  const { body } = await call('POST', '/register', { body: { username: 'Ann', password: 'secret1' } });
-  const { id: userId } = (await call('POST', '/internal/session', { key: KEY, body: { token: body.token } })).body;
+  const { token } = await call('POST', '/register', { body: { username: 'Ann', password: 'secret1' } });
+  const { id: userId } = (await call('POST', '/internal/session', { key: KEY, body: { token } })).body;
   const hand = (n) => ({ hand: n, endedAt: n, hole: ['As', 'Kd', 'extra'], board: ['2c'], folded: false, shown: 'Pair',
     pot: 40, delta: -20, stack: 980, winners: [{ name: 'Bob', amount: 40, hand: 'Pair of Twos', evil: '<script>' }], junk: 1 });
   const game = { mode: 'normal', tableName: 'Long', tableKey: 'k', buyIn: 1000, cashOut: 0, hands: 600, handsWon: 0,
     biggestWin: 0, startedAt: 1, handLog: Array.from({ length: 600 }, (_, i) => hand(i + 1)) };
   const res = await call('POST', '/internal/game', { key: KEY, body: { userId, amount: 0, game } });
   assert.equal(res.status, 200, 'a 600-hand log is well over 8 KB');
-  const { games } = (await call('GET', '/profile', { token: body.token })).body;
-  const { handLog } = (await call('GET', `/games/${games[0].id}`, { token: body.token })).body.game;
+  const { games } = (await call('GET', '/profile', { token })).body;
+  const { handLog } = (await call('GET', `/games/${games[0].id}`, { token })).body.game;
   assert.equal(handLog.length, 500, 'only the latest 500 hands are kept');
   assert.equal(handLog[0].hand, 101);
   assert.deepEqual(handLog[0].hole, ['As', 'Kd']);
@@ -166,6 +176,15 @@ test('hand logs are validated, trimmed to known fields and may exceed the public
   assert.equal(handLog[0].junk, undefined);
   const bad = await call('POST', '/internal/game', { key: KEY, body: { userId, amount: 0, game: { ...game, handLog: [null] } } });
   assert.equal(bad.status, 400);
+});
+
+test('scripts may send the session as a Bearer header; plain-HTTP setups can drop Secure', async (t) => {
+  const { server, call } = await start({ cookieSecure: false });
+  t.after(() => server.close());
+  const reg = await call('POST', '/register', { body: { username: 'Ann', password: 'secret1' } });
+  assert.doesNotMatch(reg.setCookie, /Secure/);
+  assert.equal((await call('GET', '/me', { bearer: reg.token })).body.username, 'Ann');
+  assert.equal((await call('GET', '/me', { bearer: 'nope' })).status, 401);
 });
 
 test('unknown routes and bad JSON are client errors', async (t) => {
