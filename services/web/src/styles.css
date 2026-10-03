@@ -161,7 +161,8 @@
   /* ---------------------------------------------------------- bank */
   /* balance pill in the header: a little gold chip and the amount */
   .bank {
-    @apply inline-flex items-center gap-1.5 rounded-full border border-primary/50 px-2.5 py-0.5 text-sm font-bold text-primary;
+    @apply inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-primary/50 px-2.5 py-0.5 text-sm font-bold text-primary
+      transition-colors hover:bg-primary/10;
   }
   .bank-chip {
     @apply size-3.5 rounded-full;
@@ -172,17 +173,24 @@
   @keyframes bank-bump {
     40% { transform: scale(1.12); }
   }
-  /* the chip shop sits recessed into the lobby panel */
-  .shop {
-    @apply rounded-lg border-2 border-dashed border-foreground/30 p-4;
-    background: rgb(255 248 235 / 0.25);
+  /* the bank panel drops down under the balance in the header (a popover in the top layer) */
+  .bank-panel {
+    @apply rounded-xl border p-4 shadow-2xl shadow-black/60;
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    top: 3.75rem;
+    /* lined up with the right edge of the header's content */
+    right: max(1rem, calc((100vw - 72rem) / 2 + 1rem));
+    width: min(22rem, calc(100vw - 2rem));
   }
+  .bank-panel:popover-open { @apply animate-[pop_160ms_ease-out]; }
   .pack { @apply px-2 tabular-nums; }
 
   /* ---------------------------------------------------------- surfaces */
   /* Oak surfaces carry their own dark-on-wood palette, so every component
      inside them (buttons, inputs, muted text) adapts automatically. */
-  .wood, .panel, .modal, .seat, .result-banner {
+  .wood, .panel, .modal, .seat, .result-banner, .bank-panel {
     --foreground: #15110c;
     --card-foreground: #15110c;
     --muted-foreground: #3b2e20;

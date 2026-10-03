@@ -30,7 +30,9 @@ env:
 - extendedWaitUntil:
     visible: "Welcome, ${output.user}"
     timeout: 10000
-# the welcome bonus, then a pack from the shop
+# the welcome bonus, then a pack from the bank (it opens from the balance in the header)
+- tapOn:
+    id: "bank"
 - assertVisible:
     id: "shop-balance"
     text: "1,000"
@@ -40,6 +42,8 @@ env:
 - assertVisible:
     id: "bank-amount"
     text: "1,500"
+- tapOn:
+    id: "bank"
 # sit down with 1,200: it leaves the bank and becomes the stack at the table
 - tapOn:
     id: "buy-in-input"
@@ -82,9 +86,13 @@ env:
 - extendedWaitUntil:
     visible: "Welcome, ${output.user}"
     timeout: 10000
+- tapOn:
+    id: "bank"
 - assertVisible:
     id: "shop-balance"
     text: "1,500"
+- tapOn:
+    id: "bank"
 # a buy-in larger than the bank is refused
 - tapOn:
     id: "buy-in-input"

@@ -37,6 +37,11 @@ url: ${APP_URL}
     visible: "Welcome, ${PLAYER_NAME}"
     timeout: 10000
 # buy chips before playing, so repeated runs never run the bank dry
+# (the bank opens from the balance in the header)
+- tapOn:
+    id: "bank"
 - tapOn:
     id: "buy-1000"
 - assertVisible: "Bought 1,000 chips"
+- tapOn:
+    id: "bank"
