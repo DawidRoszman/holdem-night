@@ -65,6 +65,7 @@ import { Table3D } from './table3d.js';
     bank: null,
     playerId: null,
     table: null,
+    screen: null,
     reconnectDelay: 500,
   };
   const CHIP_PACKS = [500, 1000, 5000];
@@ -135,7 +136,7 @@ import { Table3D } from './table3d.js';
     ws.onclose = () => {
       setConnection('Disconnected – reconnecting…', 'bad');
       state.table = null;
-      if (state.token) show('lobby');
+      if (state.token && state.screen !== 'profile') show('lobby');
       setTimeout(connect, state.reconnectDelay);
       state.reconnectDelay = Math.min(state.reconnectDelay * 2, 5000);
     };
@@ -161,7 +162,7 @@ import { Table3D } from './table3d.js';
         savedSession.set({ token: state.token, name: msg.name });
         $('welcome').textContent = `Welcome, ${msg.name}`;
         setBank(msg.chips);
-        if (!state.table) show('lobby');
+        if (!state.table && state.screen !== 'profile') show('lobby');
         break;
       case 'authError':
         expireSession(msg.message);
@@ -197,6 +198,8 @@ import { Table3D } from './table3d.js';
     $('user-name').textContent = state.name || '';
     $('user-initial').textContent = state.name ? state.name.trim()[0].toUpperCase() : '';
     $('user-menu').hidden = !loggedIn;
+    // the profile is opened from the lobby; leave the table first
+    $('profile-button').disabled = Boolean(state.table);
     const bank = state.bank === null ? '…' : formatChips(state.bank);
     $('bank-amount').textContent = bank;
     $('shop-balance').textContent = bank;
@@ -246,7 +249,10 @@ import { Table3D } from './table3d.js';
   }
 
   function show(screen) {
-    for (const s of ['login', 'lobby', 'table']) $(`screen-${s}`).hidden = s !== screen;
+    if (state.screen === 'profile' && screen !== 'profile') closeProfile();
+    state.screen = screen;
+    for (const s of ['login', 'lobby', 'table', 'profile']) $(`screen-${s}`).hidden = s !== screen;
+    $('profile-button').disabled = Boolean(state.table);
   }
 
   let toastTimer;
@@ -280,6 +286,10 @@ import { Table3D } from './table3d.js';
         live.textContent = 'In play';
         name.append(live);
       }
+      const mode = document.createElement('span');
+      mode.className = `mode-badge${t.mode === 'bot' ? ' practice' : ''}`;
+      mode.textContent = t.mode === 'bot' ? 'Practice' : 'Real chips';
+      name.append(mode);
       const info = document.createElement('span');
       info.className = 'meta';
       info.textContent = `${t.players}/${t.maxPlayers} players · blinds ${t.blinds}`;
@@ -376,6 +386,10 @@ import { Table3D } from './table3d.js';
     $('board').replaceChildren(...t.board.map(markCard));
     $('pot').textContent = `Pot: ${t.pot}`;
     $('status').textContent = statusText(t);
+    const practice = t.mode === 'bot';
+    $('practice-badge').hidden = !practice;
+    // bots only sit at practice tables
+    $('add-bot-button').hidden = !practice;
     $('add-bot-button').disabled = t.seats.every(Boolean);
 
     // chips already in the middle; this street's bets are drawn in front of each seat
@@ -610,8 +624,10 @@ import { Table3D } from './table3d.js';
   }
 
   // A rebuy costs the original buy-in; if the bank is short, the button buys a pack first.
+  // At practice tables it's free.
   function rebuyPlan(t) {
     const cost = (t.you && t.you.buyIn) || t.startingChips;
+    if (t.mode === 'bot') return { cost, pack: 0, free: true };
     const short = state.bank === null ? 0 : Math.max(0, cost - state.bank);
     const pack = short > 0 ? CHIP_PACKS.find((p) => p >= short) || CHIP_PACKS.at(-1) : 0;
     return { cost, pack };
@@ -619,12 +635,146 @@ import { Table3D } from './table3d.js';
 
   function renderBustedBank(t) {
     if (!t.you || !t.you.busted) return;
-    const { cost, pack } = rebuyPlan(t);
+    const { cost, pack, free } = rebuyPlan(t);
     $('rebuy-button').textContent = pack ? `Buy ${formatChips(pack)} & rebuy` : `Rebuy ${cost} chips`;
     $('rebuy-inline').textContent = pack ? `Buy & rebuy` : `Rebuy ${cost}`;
+    if (free) {
+      $('busted-bank').textContent = 'Practice chips are free: your bank is not touched.';
+      return;
+    }
     $('busted-bank').textContent = state.bank === null ? '' : pack
       ? `Your bank has ${formatChips(state.bank)} chips, not enough for a ${formatChips(cost)} rebuy.`
       : `Your bank has ${formatChips(state.bank)} chips.`;
+  }
+
+  const tableMode = () => ($('mode-bot').checked ? 'bot' : 'normal');
+
+  // ------------------------------------------------------------- profile
+
+  let destroyCharts = null;
+  let profileRequest = 0;
+
+  function closeProfile() {
+    profileRequest += 1; // ignore a response still on its way
+    if (destroyCharts) destroyCharts();
+    destroyCharts = null;
+  }
+
+  const formatSigned = (n) => (n > 0 ? `+${formatChips(n)}` : n < 0 ? `\u2212${formatChips(-n)}` : '0');
+  const formatDate = (ms) => new Date(ms).toLocaleDateString(undefined, { dateStyle: 'medium' });
+  const formatWhen = (ms) => new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  const percent = (part, whole) => (whole ? `${Math.round((part / whole) * 100)}%` : '–');
+  const tone = (n) => (n > 0 ? 'up' : n < 0 ? 'down' : '');
+
+  function cell(text, className = '') {
+    const td = document.createElement('td');
+    td.textContent = text;
+    if (className) td.className = className;
+    return td;
+  }
+
+  function stat(label, value, { className = '', sub = '' } = {}) {
+    const wrap = document.createElement('div');
+    wrap.className = 'stat';
+    const dt = document.createElement('dt');
+    dt.textContent = label;
+    const dd = document.createElement('dd');
+    dd.textContent = value;
+    if (className) dd.className = className;
+    wrap.append(dt, dd);
+    if (sub) {
+      const note = document.createElement('span');
+      note.className = 'sub';
+      note.textContent = sub;
+      dd.append(note);
+      note.before(document.createElement('br'));
+    }
+    return wrap;
+  }
+
+  async function openProfile() {
+    if (state.table) return;
+    closeProfile();
+    show('profile');
+    const request = profileRequest;
+    $('profile-name').textContent = state.name || 'Profile';
+    $('profile-initial').textContent = state.name ? state.name.trim()[0].toUpperCase() : '';
+    $('profile-error').hidden = true;
+    $('profile-stats').setAttribute('aria-busy', 'true');
+    let profile;
+    let charts;
+    try {
+      [profile, charts] = await Promise.all([api('/profile', { method: 'GET' }), import('./profile-charts.js')]);
+    } catch (err) {
+      if (request !== profileRequest) return;
+      if (err.status === 401) return expireSession(err.message);
+      $('profile-error').textContent = err.status ? err.message : 'Could not load your profile, try again shortly';
+      $('profile-error').hidden = false;
+      return;
+    }
+    if (request !== profileRequest) return;
+    renderProfile(profile, charts);
+  }
+
+  function renderProfile({ user, stats, timeline, games, deposits }, charts) {
+    const money = stats.normal;
+    $('profile-name').textContent = user.username;
+    $('profile-since').textContent = `Playing since ${formatDate(user.createdAt)}`;
+    setBank(user.chips);
+
+    const hands = (s) => `${formatChips(s.handsWon)} of ${formatChips(s.hands)} hands won`;
+    $('profile-stats').replaceChildren(
+      stat('Net result', formatSigned(money.net), { className: tone(money.net) }),
+      stat('Chips won', formatChips(money.earned), { sub: 'in winning games' }),
+      stat('Chips lost', formatChips(money.lost), { sub: 'in losing games' }),
+      stat('Biggest hand win', formatChips(money.biggestWin)),
+      stat('Real-chip games', formatChips(money.games), { sub: `${percent(money.handsWon, money.hands)} · ${hands(money)}` }),
+      stat('Best game', money.bestGame === null ? '–' : formatSigned(money.bestGame), { className: tone(money.bestGame) }),
+      stat('Chips added', formatChips(stats.deposited), { sub: 'welcome bonus and packs' }),
+      stat('Practice games', formatChips(stats.bot.games), { sub: hands(stats.bot) }),
+    );
+    $('profile-stats').setAttribute('aria-busy', 'false');
+
+    // the chart reads left to right, oldest first; the history table lists newest first
+    const moneyGames = games.filter((g) => g.mode === 'normal').reverse();
+    $('balance-empty').hidden = timeline.length > 0;
+    $('balance-chart').hidden = timeline.length === 0;
+    $('games-empty').hidden = moneyGames.length > 0;
+    $('games-chart').hidden = moneyGames.length === 0;
+    destroyCharts = charts.mountProfileCharts({
+      balanceEl: $('balance-chart'),
+      gamesEl: $('games-chart'),
+      timeline,
+      games: moneyGames,
+    });
+
+    $('history-empty').hidden = games.length > 0;
+    $('history-body').replaceChildren(...games.map((g) => {
+      const tr = document.createElement('tr');
+      const practice = g.mode === 'bot';
+      tr.append(
+        cell(g.tableName),
+        cell(practice ? 'Practice' : 'Real chips', 'wide-only'),
+        cell(`${g.handsWon}/${g.hands}`, 'num'),
+        cell(formatChips(g.buyIn), 'num wide-only'),
+        // practice results are shown, but never reached the bank
+        cell(practice ? `${formatSigned(g.net)} (free)` : formatSigned(g.net), `num ${practice ? '' : tone(g.net)}`),
+        cell(formatWhen(g.endedAt)),
+      );
+      return tr;
+    }));
+
+    $('deposits-total').textContent = formatChips(stats.deposited);
+    $('deposits-body').replaceChildren(...deposits.map((d) => {
+      const tr = document.createElement('tr');
+      tr.append(
+        cell(d.kind === 'welcome' ? 'Welcome bonus' : 'Chip pack'),
+        cell(`+${formatChips(d.amount)}`, 'num'),
+        cell(formatChips(d.balance), 'num wide-only'),
+        cell(formatWhen(d.createdAt)),
+      );
+      return tr;
+    }));
   }
 
   function buyIn() {
@@ -701,6 +851,8 @@ import { Table3D } from './table3d.js';
   });
 
   $('logout-button').addEventListener('click', logOut);
+  $('profile-button').addEventListener('click', openProfile);
+  $('profile-back').addEventListener('click', () => show(state.table ? 'table' : 'lobby'));
 
   $('login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -736,7 +888,7 @@ import { Table3D } from './table3d.js';
 
   $('create-form').addEventListener('submit', (e) => {
     e.preventDefault();
-    send({ type: 'createTable', name: $('table-name-input').value.trim(), buyIn: buyIn() });
+    send({ type: 'createTable', name: $('table-name-input').value.trim(), buyIn: buyIn(), mode: tableMode() });
     $('table-name-input').value = '';
   });
 

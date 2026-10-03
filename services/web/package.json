@@ -6,7 +6,7 @@
   "scripts": {
     "build": "npm run build:css && npm run build:js",
     "build:css": "tailwindcss -i src/styles.css -o public/style.css --minify",
-    "build:js": "esbuild src/table3d.js --bundle --format=esm --minify --target=es2022 --outfile=public/table3d.js",
+    "build:js": "esbuild src/table3d.js src/profile-charts.js --bundle --format=esm --minify --target=es2022 --outdir=public",
     "watch:css": "tailwindcss -i src/styles.css -o public/style.css --watch"
   },
   "devDependencies": {
@@ -15,6 +15,9 @@
     "tailwindcss": "^4.3.3"
   },
   "dependencies": {
+    "@tanstack/charts": "^0.18.0",
+    "d3-scale": "^4.0.2",
+    "d3-shape": "^3.2.0",
     "three": "^0.186.1"
   }
 }

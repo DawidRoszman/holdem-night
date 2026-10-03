@@ -2,6 +2,7 @@ node_modules/
 e2e/report.xml
 services/web/public/style.css
 services/web/public/table3d.js
+services/web/public/profile-charts.js
 .DS_Store
 .env
 *.db

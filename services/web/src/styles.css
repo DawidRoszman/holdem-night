@@ -215,6 +215,13 @@
     @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium;
   }
 
+  /* your initial (and name, on wider screens) in the header opens the profile */
+  .profile-chip {
+    @apply inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-full px-1 text-sm text-muted-foreground
+      transition-colors hover:text-foreground disabled:cursor-default disabled:opacity-50;
+  }
+  .profile-chip:not(:disabled):hover #user-name { @apply underline underline-offset-4; }
+
   /* ---------------------------------------------------------- connection pill */
   .connection {
     @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium text-muted-foreground;
@@ -242,6 +249,61 @@
   .lobby-row .live {
     @apply ml-2 inline-flex items-center gap-1 rounded-[4px] border border-current px-1.5 text-xs font-bold text-success;
   }
+
+  /* table type: two carved tiles, the chosen one pressed in */
+  .mode-picker { @apply grid gap-2 sm:grid-cols-2; }
+  .mode-option {
+    @apply flex cursor-pointer flex-col gap-0.5 rounded-lg border-2 border-foreground/30 px-4 py-3 transition-colors hover:bg-foreground/5;
+  }
+  .mode-option:has(:checked) { @apply border-foreground bg-foreground/10; box-shadow: inset 0 2px 4px rgb(40 28 15 / 0.25); }
+  .mode-option:has(:focus-visible) { @apply outline-2 outline-offset-2 outline-ring; }
+  .mode-name { @apply font-bold; }
+  .mode-option:has(:checked) .mode-name::before { content: "\2713\00a0"; }
+  .mode-desc { @apply text-sm text-muted-foreground; }
+  .mode-badge {
+    @apply inline-flex items-center rounded-[4px] border border-current px-1.5 text-xs font-bold whitespace-nowrap;
+  }
+  .lobby-row .mode-badge { @apply ml-2; }
+  .mode-badge.practice { @apply text-warning; }
+
+  /* ---------------------------------------------------------- profile */
+  .section-title { @apply text-xs font-bold tracking-[0.14em] text-muted-foreground uppercase; }
+  .stat-grid { @apply grid grid-cols-2 gap-px overflow-hidden rounded-lg border-2 border-foreground/25 bg-foreground/25 sm:grid-cols-4; }
+  .stat { @apply flex flex-col gap-1 bg-[color-mix(in_oklab,var(--card),white_14%)] px-4 py-3; }
+  .stat dt { @apply text-xs font-medium text-muted-foreground; }
+  .stat dd { @apply text-xl font-bold tabular-nums sm:text-2xl; }
+  .stat dd.up { color: #1a5f96; }
+  .stat dd.down { color: #a8401c; }
+  .stat .sub { @apply text-xs font-medium text-muted-foreground; }
+
+  /* charts inherit the engraved ink for axes, grid and the balance line */
+  .chart {
+    @apply min-h-[260px] text-xs text-foreground [text-shadow:none];
+    --ts-chart-tooltip-background: #f7f1e3;
+    --ts-chart-tooltip-color: #15110c;
+    --ts-chart-tooltip-border: 1px solid rgb(40 28 15 / 0.35);
+    --ts-chart-tooltip-border-radius: 0.375rem;
+    --ts-chart-tooltip-shadow: 0 10px 24px -8px rgb(0 0 0 / 0.5);
+  }
+  .chart-tooltip { @apply text-xs leading-relaxed font-medium tabular-nums whitespace-pre-line; }
+  .legend { @apply flex gap-4 text-sm font-medium; }
+  .legend li { @apply flex items-center gap-1.5; }
+  .swatch { @apply inline-block size-3 rounded-[3px]; }
+  .swatch.win { background: #1a5f96; }
+  .swatch.loss { background: #a8401c; }
+  .empty-note {
+    @apply border-y-2 border-dashed border-foreground/25 px-4 py-8 text-center text-sm font-medium text-muted-foreground;
+  }
+
+  .history { @apply w-full text-sm; }
+  .history th { @apply border-b-2 border-foreground/30 px-2 py-2 text-left text-xs font-bold text-muted-foreground; }
+  .history td { @apply border-b border-foreground/15 px-2 py-2 align-top whitespace-nowrap; }
+  .history td:first-child { @apply max-w-48 truncate font-semibold; }
+  .history .num { @apply text-right tabular-nums; }
+  /* columns that can go on a phone */
+  .history .wide-only { @apply hidden sm:table-cell; }
+  .history .up { @apply font-bold; color: #1a5f96; }
+  .history .down { @apply font-bold; color: #a8401c; }
 
   /* ---------------------------------------------------------- felt + seats */
   .felt-wrap { @apply px-4 pt-14 pb-20 sm:px-16; }
@@ -407,6 +469,8 @@
     .chip-stack.pot .chip:not(.edge) { @apply size-5; }
     .chip-stack.pot .chip.edge { @apply h-1.5 w-5; }
     .rankings .rank-cards { @apply col-start-2 row-span-1 row-start-auto mt-1; }
+    /* no room for the words in the header: the dot shows the state, screen readers still get the text */
+    .connection { @apply gap-0 p-1.5 text-[0px]; }
   }
 }
 
