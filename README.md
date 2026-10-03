@@ -27,7 +27,7 @@ At showdown the game service calls the evaluator, retrying once. If the evaluato
 
 | Client → server | Server → client |
 |---|---|
-| `{type:"hello", token}` | `{type:"welcome", playerId, name, chips, timing}` or `{type:"authError", message}` |
+| `{type:"hello"}` (scripts: `{type:"hello", token}`) | `{type:"welcome", playerId, name, chips, timing}` or `{type:"authError", message}` |
 | `{type:"listTables"}` | `{type:"tables", tables:[…]}` |
 | `{type:"createTable", name, buyIn?, mode?}` / `{type:"joinTable", tableId, buyIn?}` | `{type:"state", table}`: per-player view; opponents' cards stay hidden until showdown |
 | `{type:"leaveTable"}` / `{type:"addBot"}` / `{type:"rebuy"}` / `{type:"startGame"}` | `{type:"left", reason?}` / `{type:"notice", message}` |
@@ -56,12 +56,13 @@ At showdown the game service calls the evaluator, retrying once. If the evaluato
 
 | Public (`/api/accounts/…` via the gateway) | |
 |---|---|
-| `POST /register {username, password}` | new account with the welcome chips (1,000); returns `{token, user}` |
-| `POST /login {username, password}` | returns `{token, user}`; 5 failed attempts lock the name for 5 minutes |
-| `POST /logout`, `GET /me`, `GET /history`, `GET /profile`, `GET /games/:id` | `Authorization: Bearer <token>` |
+| `POST /register {username, password}` | new account with the welcome chips (1,000); returns `{user}` and sets the session cookie |
+| `POST /login {username, password}` | returns `{user}` and sets the session cookie; 5 failed attempts lock the name for 5 minutes |
+| `POST /logout`, `GET /me`, `GET /history`, `GET /profile`, `GET /games/:id` | need the session cookie (or `Authorization: Bearer <token>`); `/logout` clears the cookie |
 | `POST /buy {amount}` | buys a play-money pack of 500, 1,000 or 5,000 chips (free, no payment step) |
 
 - **Passwords** are salted `scrypt` hashes. Session tokens are random and stored only as SHA-256 hashes; they expire after 7 days.
+- **Session cookie**: logging in sets `holdem_session` as an `HttpOnly; Secure; SameSite=Strict` cookie, so page scripts never see the token, and no other site can send requests or open the game's WebSocket with it. The browser sends it with every API call and with the WebSocket handshake; the game service reads it from there and also turns away handshakes whose `Origin` is another site. Browsers only store a `Secure` cookie over HTTPS or on `localhost`: when serving plain HTTP on another address (say, `http://192.168.1.20:8090` on a LAN), set `COOKIE_SECURE=false`. Scripts, such as the e2e remote player, can read the token from `Set-Cookie` and send it as `Authorization: Bearer` and in `hello`.
 - **Internal API**: `POST /internal/session`, `/internal/debit`, `/internal/credit` and `/internal/game` are for the game service only. They need the shared `X-Internal-Key` (`ACCOUNTS_INTERNAL_KEY`), and the gateway answers 404 for them.
 - **Buying in**: sitting down at a table takes the buy-in (200 to 5,000, default 1,000) out of your bank, and it becomes your stack. A rebuy costs the same amount again.
 - **Cashing out**: leaving the table or logging out pays your stack back to the bank (after the hand, if you leave mid-hand). Closing the tab or losing the connection does the same once the seat stops being held (see *Reconnecting* below). If the game service is stopped, it cancels any hand in progress and pays every player's stack and current bets back before exiting.
@@ -78,7 +79,7 @@ docker compose up -d --build --wait
 open http://localhost:8090        # host port: WEB_PORT (default 8090)
 ```
 
-Tunables (env vars for compose): `WEB_PORT`, `BOT_DELAY_MS`, `NEXT_HAND_DELAY_MS`, `TURN_TIMEOUT_MS`, `RECONNECT_GRACE_MS`, `WELCOME_CHIPS`, and `ACCOUNTS_INTERNAL_KEY` (**set your own** anywhere other than your machine; the default is a placeholder).
+Tunables (env vars for compose): `WEB_PORT`, `BOT_DELAY_MS`, `NEXT_HAND_DELAY_MS`, `TURN_TIMEOUT_MS`, `RECONNECT_GRACE_MS`, `WELCOME_CHIPS`, `COOKIE_SECURE`, and `ACCOUNTS_INTERNAL_KEY` (**set your own** anywhere other than your machine; the default is a placeholder).
 
 Accounts live in the `holdem_accounts-data` volume and survive `docker compose down`; `docker compose down -v` wipes them.
 
@@ -86,7 +87,7 @@ Create an account (or log in), buy chips from your bank (click the balance at th
 
 - **Results**: after each hand a banner says whether you won or lost and by how much, and why the winner won (e.g. *"Three Queens beats Bob's Two Pair, Kings and Sevens"*, or a kicker comparison). The winning five cards glow, every revealed hand is labelled, and each seat shows its chip change.
 - **Going broke**: a player who runs out of chips keeps their seat, sees the hand that busted them, and gets a dialog to **Rebuy** (paid from the bank; if the bank is short, the button buys a pack first) or go **Back to lobby**. A player left alone with chips sees *"You won the table!"*.
-- **Session**: your login token is kept in `sessionStorage`, so refreshing the page logs you straight back in. **Log out** in the header leaves your table and ends the session on the server too.
+- **Session**: the session cookie keeps you logged in across reloads; the tab only remembers your name to draw the right page before the server confirms. **Log out** in the header leaves your table, ends the session on the server and clears the cookie.
 - **Reconnecting**: refreshing the page (or a dropped connection) at a table doesn't cost you your seat. The server holds it for `RECONNECT_GRACE_MS` (60 s by default; `0` turns it off), and the other players see *Reconnecting…* on it. When you sign in again with the same account within that time, you land straight back at the table with your cards, your stack, host role and the turn clock as they were, plus a *Welcome back* message. While you're away the turn clock still runs, so your hand may be checked or folded for you. After the grace period you leave the table and your stack is paid back. If the same account already has another page open in the lobby (a reload's new page can connect before the old one closes, or a second tab), the seat goes to that page straight away. Guest mode has no account to come back as, so guests leave at once.
 - **Pages and addresses**: every page has its own address: `/` (the lobby, or the login screen when logged out), `/profile`, `/games/<id>` and `/tables/<id>`. The browser's back and forward buttons move between them, and a refresh stays on the same page. Logging in again after a session expired returns to the page you were on. nginx answers any unknown path with `index.html`, so the client loads its files from absolute paths.
 - **Header**: the logo and *Hold'em Night* title go home. While you're seated, going anywhere else (the logo, or the back button) first asks *Leave the table?*, because leaving folds a hand in play; *Stay at the table* (or Esc) keeps you seated.

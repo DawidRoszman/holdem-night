@@ -14,6 +14,8 @@ services:
       DB_PATH: /data/accounts.db
       INTERNAL_KEY: ${ACCOUNTS_INTERNAL_KEY:-change-me-internal-key}
       WELCOME_CHIPS: ${WELCOME_CHIPS:-1000}
+      # false only when serving plain HTTP on an address other than localhost (e.g. on a LAN)
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
     volumes:
       - accounts-data:/data
     restart: unless-stopped

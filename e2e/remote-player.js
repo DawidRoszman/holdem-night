@@ -14,20 +14,23 @@ const playerName = 'Remote Rita';
 const password = 'remote-secret';
 const accountsUrl = `${url.replace(/^ws/, 'http').replace(/\/ws$/, '')}/api/accounts`;
 
+// The session comes as an HttpOnly cookie (meant for browsers); a script reads it from
+// Set-Cookie and sends it back as a Bearer header, and as the token in its hello.
 async function post(path, body, token) {
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(`${accountsUrl}${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
-  return { status: res.status, body: await res.json().catch(() => ({})) };
+  const session = /holdem_session=([^;]+)/.exec(res.headers.get('set-cookie') || '');
+  return { status: res.status, body: await res.json().catch(() => ({})), token: session && session[1] };
 }
 
 // Registers on first use, logs in afterwards, and tops up the bank for the buy-in.
 async function signIn() {
   let res = await post('/register', { username: playerName, password });
   if (res.status === 409) res = await post('/login', { username: playerName, password });
-  if (!res.body.token) throw new Error(`sign-in failed: ${res.status} ${JSON.stringify(res.body)}`);
-  await post('/buy', { amount: 1000 }, res.body.token);
-  return res.body.token;
+  if (!res.token) throw new Error(`sign-in failed: ${res.status} ${JSON.stringify(res.body)}`);
+  await post('/buy', { amount: 1000 }, res.token);
+  return res.token;
 }
 
 async function start() {
