@@ -123,7 +123,8 @@ test('the profile sums money stats from normal games only', async () => {
   assert.equal(user.username, 'Ann');
   assert.equal(user.createdAt, 1);
   assert.deepEqual(stats.normal, {
-    games: 3, hands: 15, handsWon: 6, earned: 800, lost: 900, net: -100, biggestWin: 700, bestGame: 800, worstGame: -600,
+    games: 3, hands: 15, handsWon: 6, won: 1, lostGames: 2, boughtIn: 3000,
+    earned: 800, lost: 900, net: -100, biggestWin: 700, bestGame: 800, worstGame: -600,
   });
   assert.deepEqual(stats.bot, { games: 1, hands: 40, handsWon: 30 });
   assert.equal(stats.deposited, 1500);
@@ -138,7 +139,8 @@ test('a new player has an empty profile', async () => {
   const { id } = await store.register('Ann', 'secret1');
   const { stats, games, timeline } = store.profile(id);
   assert.deepEqual(stats.normal, {
-    games: 0, hands: 0, handsWon: 0, earned: 0, lost: 0, net: 0, biggestWin: 0, bestGame: null, worstGame: null,
+    games: 0, hands: 0, handsWon: 0, won: 0, lostGames: 0, boughtIn: 0,
+    earned: 0, lost: 0, net: 0, biggestWin: 0, bestGame: null, worstGame: null,
   });
   assert.deepEqual([games, timeline], [[], []]);
 });
