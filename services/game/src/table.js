@@ -67,6 +67,9 @@ class Table {
     this.handNumber = 0;
     this.log = [];
     this.lastResult = null;
+    // the host (first human seated) starts the game; until then no hand is dealt
+    this.hostId = null;
+    this.started = false;
   }
 
   // ---------------------------------------------------------------- seating
@@ -130,6 +133,7 @@ class Table {
       biggestWin: 0,
     };
     this.addLog(`${name} sits down at seat ${seat + 1}`);
+    if (!isBot && !this.hostId) this.hostId = id;
     return seat;
   }
 
@@ -153,9 +157,32 @@ class Table {
       p.leaving = true;
       return;
     }
-    this.seats[p.seat] = null;
     this.addLog(`${p.name} leaves the table`);
+    this.vacate(p);
+  }
+
+  // Frees a seat; a departing host hands the table to the next human still playing.
+  vacate(p) {
+    this.seats[p.seat] = null;
+    if (p.id === this.hostId) {
+      const next = this.players.find((o) => !o.isBot && !o.leaving);
+      this.hostId = next ? next.id : null;
+      if (next) this.addLog(`${next.name} is now the host`);
+    }
     this.onEvent('removed', p);
+  }
+
+  get host() {
+    return this.hostId ? this.findPlayer(this.hostId) : null;
+  }
+
+  // Only the host starts the game, once enough players have chips. Later hands follow on their own.
+  start(id) {
+    if (this.started) throw new GameError('The game has already started');
+    if (id !== this.hostId) throw new GameError("Only the table's host can start the game");
+    if (!this.canStart()) throw new GameError('Need at least two players with chips to start');
+    this.started = true;
+    this.addLog(`${this.host.name} starts the game`);
   }
 
   canStart() {
@@ -175,9 +202,8 @@ class Table {
   clearBusted() {
     for (const p of this.players) {
       if (p.isBot && this.isBusted(p)) {
-        this.seats[p.seat] = null;
         this.addLog(`${p.name} leaves the table`);
-        this.onEvent('removed', p);
+        this.vacate(p);
       }
     }
   }
@@ -543,8 +569,7 @@ class Table {
     this.lastResult = { ...result, deltas, busted };
     for (const p of this.players) {
       if (p.leaving) {
-        this.seats[p.seat] = null;
-        this.onEvent('removed', p);
+        this.vacate(p);
       }
     }
   }
@@ -559,6 +584,9 @@ class Table {
       id: this.id,
       name: this.name,
       mode: this.mode,
+      started: this.started,
+      hostId: this.hostId,
+      hostName: this.host ? this.host.name : null,
       stage: this.stage,
       handNumber: this.handNumber,
       board: this.board,
@@ -592,7 +620,14 @@ class Table {
       lastResult: this.lastResult,
       startingChips: this.startingChips,
       you: me
-        ? { seat: me.seat, legal: this.legalActions(me), busted: this.isBusted(me), buyIn: me.buyIn }
+        ? {
+          seat: me.seat,
+          legal: this.legalActions(me),
+          busted: this.isBusted(me),
+          buyIn: me.buyIn,
+          isHost: me.id === this.hostId,
+          canStart: me.id === this.hostId && !this.started && this.canStart(),
+        }
         : null,
     };
   }
@@ -602,6 +637,7 @@ class Table {
       id: this.id,
       name: this.name,
       mode: this.mode,
+      started: this.started,
       players: this.players.length,
       maxPlayers: this.maxPlayers,
       stage: this.stage,

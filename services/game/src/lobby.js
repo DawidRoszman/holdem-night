@@ -103,6 +103,9 @@ class Lobby {
         case 'addBot':
           await this.addBot(client);
           break;
+        case 'startGame':
+          await this.startGame(client);
+          break;
         case 'rebuy':
           await this.rebuy(client);
           break;
@@ -133,10 +136,10 @@ class Lobby {
       }
       client.userId = user.id;
       client.name = user.username;
-      this.send(client.id, { type: 'welcome', playerId: client.id, name: client.name, chips: user.chips });
+      this.send(client.id, { type: 'welcome', playerId: client.id, name: client.name, chips: user.chips, timing: this.rules() });
     } else {
       client.name = cleanName(msg.name, `Player-${client.id.slice(0, 4)}`);
-      this.send(client.id, { type: 'welcome', playerId: client.id, name: client.name });
+      this.send(client.id, { type: 'welcome', playerId: client.id, name: client.name, timing: this.rules() });
     }
     this.send(client.id, { type: 'tables', tables: this.tableList() });
   }
@@ -223,7 +226,8 @@ class Lobby {
     const mode = rawMode ?? 'normal';
     if (!MODES.includes(mode)) throw new GameError('Choose a normal or a practice table');
     const id = this.newId().slice(0, 8);
-    const entry = { table: null, queue: Promise.resolve(), timers: {}, bots: 0 };
+    // due: when each running timer fires; turnKey: whose turn the 'turn'/'bot' timer is for
+    const entry = { table: null, queue: Promise.resolve(), timers: {}, due: {}, turnKey: null, bots: 0 };
     entry.table = new Table({
       id,
       name: cleanName(rawName, `${client.name}'s table`),
@@ -297,6 +301,24 @@ class Lobby {
     this.afterChange(entry);
   }
 
+  // The host deals the first hand; after that hands follow one another on their own.
+  async startGame(client) {
+    const entry = this.tables.get(client.tableId);
+    if (!entry) throw new GameError('Join a table first');
+    let error = null;
+    await this.enqueue(entry, async () => {
+      try {
+        entry.table.start(client.id);
+        entry.table.clearBusted();
+        await entry.table.startHand();
+      } catch (err) {
+        error = err;
+      }
+    });
+    if (error) throw error;
+    this.afterChange(entry);
+  }
+
   async rebuy(client) {
     const entry = this.tables.get(client.tableId);
     if (!entry) throw new GameError('Join a table first');
@@ -345,14 +367,36 @@ class Lobby {
   clearTimer(entry, name) {
     clearTimeout(entry.timers[name]);
     delete entry.timers[name];
+    delete entry.due[name];
   }
 
   setTimer(entry, name, ms, fn) {
     this.clearTimer(entry, name);
+    entry.due[name] = Date.now() + ms;
     entry.timers[name] = setTimeout(() => {
       delete entry.timers[name];
+      delete entry.due[name];
       fn();
     }, ms);
+  }
+
+  // Milliseconds until a timer fires, or null when it isn't running.
+  remaining(entry, name) {
+    return entry.timers[name] ? Math.max(0, entry.due[name] - Date.now()) : null;
+  }
+
+  // How long a turn lasts (0: no limit) and the pause between hands.
+  rules() {
+    return { turnTimeoutMs: this.turnTimeoutMs, nextHandDelayMs: this.nextHandDelayMs };
+  }
+
+  // Timings shown at a table: the rules, plus the countdowns running right now.
+  timing(entry) {
+    return {
+      ...this.rules(),
+      turnEndsIn: this.remaining(entry, 'turn'),
+      nextHandIn: this.remaining(entry, 'next'),
+    };
   }
 
   destroyTable(entry) {
@@ -371,26 +415,22 @@ class Lobby {
       this.broadcastLobby();
       return;
     }
-    // players who left mid-hand stay seated until it ends but no longer get updates
-    for (const p of humans) {
-      if (this.clients.get(p.id)?.tableId === table.id) {
-        this.send(p.id, { type: 'state', table: table.view(p.id) });
-      }
-    }
-    this.broadcastLobby();
-
-    this.clearTimer(entry, 'bot');
-    this.clearTimer(entry, 'turn');
+    // A turn's clock starts once: other changes at the table (someone joining,
+    // leaving or rebuying) don't give the player to act more time.
     const current = table.seats[table.toAct];
-    if (table.inProgress && current) {
-      if (current.isBot) {
+    const turnKey = table.inProgress && current ? `${table.handNumber}:${table.stage}:${table.toAct}:${current.id}` : null;
+    if (turnKey !== entry.turnKey) {
+      entry.turnKey = turnKey;
+      this.clearTimer(entry, 'bot');
+      this.clearTimer(entry, 'turn');
+      if (turnKey && current.isBot) {
         this.setTimer(entry, 'bot', this.botDelayMs, () => this.runBot(entry, current.id));
-      } else if (this.turnTimeoutMs > 0) {
+      } else if (turnKey && this.turnTimeoutMs > 0) {
         this.setTimer(entry, 'turn', this.turnTimeoutMs, () => this.autoAct(entry, current.id));
       }
     }
-    // between hands: after a pause to show the result, clear out busted bots and deal again
-    if (!table.inProgress && !entry.timers.next && (table.canStart() || table.hasBustedBots())) {
+    // between hands of a started game: after a pause to show the result, clear out busted bots and deal again
+    if (table.started && !table.inProgress && !entry.timers.next && (table.canStart() || table.hasBustedBots())) {
       this.setTimer(entry, 'next', this.nextHandDelayMs, () => {
         this.enqueue(entry, async () => {
           table.clearBusted();
@@ -398,6 +438,15 @@ class Lobby {
         }).then(() => this.afterChange(entry));
       });
     }
+
+    // players who left mid-hand stay seated until it ends but no longer get updates
+    const timing = this.timing(entry);
+    for (const p of humans) {
+      if (this.clients.get(p.id)?.tableId === table.id) {
+        this.send(p.id, { type: 'state', table: { ...table.view(p.id), timing } });
+      }
+    }
+    this.broadcastLobby();
   }
 
   runBot(entry, botId) {
@@ -414,8 +463,9 @@ class Lobby {
     this.enqueue(entry, async () => {
       const p = entry.table.seats[entry.table.toAct];
       if (!p || p.id !== playerId) return;
-      const legal = entry.table.legalActions(p);
-      await entry.table.act(playerId, legal.canCheck ? 'check' : 'fold');
+      const action = entry.table.legalActions(p).canCheck ? 'check' : 'fold';
+      await entry.table.act(playerId, action);
+      this.send(playerId, { type: 'notice', message: `Time ran out, so you ${action === 'check' ? 'checked' : 'folded'}` });
     }).then(() => this.afterChange(entry));
   }
 

@@ -426,3 +426,41 @@ test('a hand cancelled by the evaluator does not count towards the stats', async
   await table.act(actor(table), 'call');
   assert.equal(table.findPlayer('a').handsPlayed, 0);
 });
+
+test('the first human seated hosts the table and only they can start it', async () => {
+  const table = makeTable([], { mode: 'bot' });
+  table.addPlayer({ id: 'bot', name: 'Bot', isBot: true });
+  table.addPlayer({ id: 'a', name: 'A' });
+  table.addPlayer({ id: 'b', name: 'B' });
+  assert.equal(table.hostId, 'a', 'bots never host');
+  assert.equal(table.view('a').you.isHost, true);
+  assert.equal(table.view('a').you.canStart, true);
+  assert.equal(table.view('b').you.canStart, false);
+  assert.throws(() => table.start('b'), /Only the table's host/);
+  table.start('a');
+  assert.equal(table.summary().started, true);
+  assert.throws(() => table.start('a'), /already started/);
+});
+
+test('the host cannot start alone, and hands the table on when leaving', async () => {
+  const table = makeTable(['a']);
+  assert.throws(() => table.start('a'), /at least two players/);
+  table.addPlayer({ id: 'b', name: 'B' });
+  table.addPlayer({ id: 'c', name: 'C' });
+  await table.removePlayer('a');
+  assert.equal(table.hostId, 'b');
+  assert.equal(table.view('c').hostName, 'B');
+  await table.removePlayer('b');
+  await table.removePlayer('c');
+  assert.equal(table.hostId, null);
+});
+
+test('a host who leaves mid-hand passes the table on once the hand ends', async () => {
+  const table = makeTable(['a', 'b', 'c']);
+  table.start('a');
+  await table.startHand();
+  await table.removePlayer('a');
+  assert.equal(table.hostId, 'a', 'still seated until the hand is over');
+  while (table.inProgress) await table.act(actor(table), 'fold');
+  assert.equal(table.hostId, 'b');
+});

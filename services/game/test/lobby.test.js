@@ -62,7 +62,7 @@ test('clients must say hello before anything else', async () => {
   await lobby.handle('c1', { type: 'listTables' });
   assert.match(last('c1', 'error').message, /hello/);
   await lobby.handle('c1', { type: 'hello', name: 'Alice' });
-  assert.deepEqual(last('c1', 'welcome'), { type: 'welcome', playerId: 'c1', name: 'Alice' });
+  assert.deepEqual(last('c1', 'welcome'), { type: 'welcome', playerId: 'c1', name: 'Alice', timing: { turnTimeoutMs: 0, nextHandDelayMs: 5 } });
   await lobby.handle('c1', { nope: true });
   assert.match(last('c1', 'error').message, /Invalid message/);
   await lobby.handle('c1', { type: 'teleport' });
@@ -86,13 +86,14 @@ test('creating a table seats the creator and updates the lobby for others', asyn
   lobby.shutdown();
 });
 
-test('two humans joining start a hand and see only their own cards', async () => {
+test('once the host starts the game, both players see only their own cards', async () => {
   const { lobby, last } = setup();
   await connectNamed(lobby, 'c1', 'Alice');
   await connectNamed(lobby, 'c2', 'Bob');
   await lobby.handle('c1', { type: 'createTable', name: 'T' });
   const tableId = last('c1', 'state').table.id;
   await lobby.handle('c2', { type: 'joinTable', tableId });
+  await lobby.handle('c1', { type: 'startGame' });
   await until(() => last('c1', 'state').table.stage === 'preflop');
   const aliceView = last('c1', 'state').table;
   assert.notEqual(aliceView.seats[0].cards[0], '??');
@@ -127,6 +128,7 @@ test('bots play hands automatically against a human', async () => {
   await lobby.handle('c1', { type: 'addBot' });
   const finished = () => all('c1', 'state').find((m) => m.table.lastResult);
   // Alice keeps checking/calling; bots respond until the hand is over
+  await lobby.handle('c1', { type: 'startGame' });
   await until(() => {
     const view = last('c1', 'state').table;
     if (view.you?.legal) {
@@ -149,6 +151,7 @@ test('turn timeout folds an idle player facing a bet', async () => {
   await connectNamed(lobby, 'c2', 'Bob');
   await lobby.handle('c1', { type: 'createTable', name: 'T' });
   await lobby.handle('c2', { type: 'joinTable', tableId: last('c1', 'state').table.id });
+  await lobby.handle('c1', { type: 'startGame' });
   await until(() => last('c1', 'state').table.lastResult?.winners?.[0]?.name === 'Bob');
   lobby.shutdown();
 });
@@ -171,6 +174,7 @@ test('disconnecting mid-hand folds the player and the other wins', async () => {
   await connectNamed(lobby, 'c2', 'Bob');
   await lobby.handle('c1', { type: 'createTable', name: 'T' });
   await lobby.handle('c2', { type: 'joinTable', tableId: last('c1', 'state').table.id });
+  await lobby.handle('c1', { type: 'startGame' });
   await until(() => last('c2', 'state').table.stage === 'preflop');
   await lobby.disconnect('c1');
   const view = last('c2', 'state').table;
@@ -199,6 +203,7 @@ test('a player who leaves mid-hand stops receiving that table\'s state', async (
   await lobby.handle('c1', { type: 'createTable', name: 'T', mode: 'bot' });
   await lobby.handle('c1', { type: 'addBot' });
   await lobby.handle('c1', { type: 'addBot' });
+  await lobby.handle('c1', { type: 'startGame' });
   await until(() => last('c1', 'state').table.stage === 'preflop');
   await lobby.handle('c1', { type: 'leaveTable' });
   const afterLeave = inbox.get('c1').length;
@@ -214,6 +219,7 @@ test('when a player busts, both players see the result and the loser can rebuy',
   await connectNamed(lobby, 'c2', 'Bob');
   await lobby.handle('c1', { type: 'createTable', name: 'T' });
   await lobby.handle('c2', { type: 'joinTable', tableId: last('c1', 'state').table.id });
+  await lobby.handle('c1', { type: 'startGame' });
   await until(() => last('c1', 'state').table.you?.legal);
   await lobby.handle('c1', { type: 'action', action: 'allin' });
   await lobby.handle('c2', { type: 'action', action: 'call' });
@@ -273,7 +279,9 @@ test('with accounts, hello takes a session token instead of a name', async () =>
   const bank = fakeBank({ ann: 1500 });
   const { lobby, last } = setup({ accounts: bank });
   await connectUser(lobby, 'c1', 'ann');
-  assert.deepEqual(last('c1', 'welcome'), { type: 'welcome', playerId: 'c1', name: 'ANN', chips: 1500 });
+  assert.deepEqual(last('c1', 'welcome'), {
+    type: 'welcome', playerId: 'c1', name: 'ANN', chips: 1500, timing: { turnTimeoutMs: 0, nextHandDelayMs: 5 },
+  });
 
   await connectUser(lobby, 'c2', 'expired');
   assert.equal(last('c2', 'welcome'), undefined);
@@ -343,6 +351,7 @@ test('a rebuy is paid from the bank, and refused when the bank is empty', async 
   await connectUser(lobby, 'c2', 'bob');
   await lobby.handle('c1', { type: 'createTable', name: 'T', buyIn: 400 });
   await lobby.handle('c2', { type: 'joinTable', tableId: last('c1', 'state').table.id, buyIn: 1000 });
+  await lobby.handle('c1', { type: 'startGame' });
   await until(() => last('c1', 'state').table.you?.legal);
   await lobby.handle('c1', { type: 'action', action: 'allin' });
   await lobby.handle('c2', { type: 'action', action: 'call' });
@@ -386,6 +395,7 @@ test('shutting down cancels the hand in play and pays every stake back', async (
   await connectUser(lobby, 'c2', 'bob');
   await lobby.handle('c1', { type: 'createTable', name: 'T' });
   await lobby.handle('c2', { type: 'joinTable', tableId: last('c1', 'state').table.id });
+  await lobby.handle('c1', { type: 'startGame' });
   await until(() => last('c1', 'state').table.stage === 'preflop');
   assert.equal(bank.balances.get('ann') + bank.balances.get('bob'), 0);
 
@@ -443,6 +453,7 @@ test('practice tables never touch the bank but still record the game', async () 
   await lobby.handle('c1', { type: 'createTable', name: 'Practice', mode: 'bot' });
   assert.equal(last('c1', 'error'), undefined);
   await lobby.handle('c1', { type: 'addBot' });
+  await lobby.handle('c1', { type: 'startGame' });
   await until(() => last('c1', 'state').table.you?.legal);
   await lobby.handle('c1', { type: 'action', action: 'fold' });
   await lobby.handle('c1', { type: 'leaveTable' });
@@ -466,6 +477,7 @@ test('leaving a normal table pays the stack back together with the game record',
   await connectUser(lobby, 'c2', 'bob');
   await lobby.handle('c1', { type: 'createTable', name: 'Duel', buyIn: 500 });
   await lobby.handle('c2', { type: 'joinTable', tableId: last('c1', 'state').table.id, buyIn: 500 });
+  await lobby.handle('c1', { type: 'startGame' });
   await until(() => last('c1', 'state').table.you?.legal);
   await lobby.handle('c1', { type: 'action', action: 'fold' }); // Ann is small blind heads-up: -10
   await lobby.handle('c2', { type: 'leaveTable' });
@@ -479,5 +491,73 @@ test('leaving a normal table pays the stack back together with the game record',
   });
   assert.deepEqual([games.ann.cashOut, games.ann.handsWon, games.ann.biggestWin], [490, 0, 0]);
   assert.equal(bank.balances.get('bob'), 1010);
+  lobby.shutdown();
+});
+
+test('nothing is dealt until the host starts the game', async () => {
+  const { lobby, last } = setup();
+  await connectNamed(lobby, 'c1', 'Alice');
+  await connectNamed(lobby, 'c2', 'Bob');
+  await lobby.handle('c1', { type: 'createTable', name: 'T' });
+  await lobby.handle('c1', { type: 'startGame' });
+  assert.match(last('c1', 'error').message, /at least two players/);
+  await lobby.handle('c2', { type: 'joinTable', tableId: last('c1', 'state').table.id });
+  await wait(50);
+  assert.equal(last('c1', 'state').table.stage, 'waiting');
+  assert.equal(last('c2', 'state').table.hostName, 'Alice');
+  await lobby.handle('c2', { type: 'startGame' });
+  assert.match(last('c2', 'error').message, /Only the table's host/);
+
+  await lobby.handle('c1', { type: 'startGame' });
+  assert.equal(last('c1', 'state').table.stage, 'preflop', 'the first hand is dealt at once');
+  lobby.shutdown();
+});
+
+test('when the host leaves, the next player can start the game', async () => {
+  const { lobby, last } = setup();
+  for (const [id, name] of [['c1', 'Alice'], ['c2', 'Bob'], ['c3', 'Cid']]) await connectNamed(lobby, id, name);
+  await lobby.handle('c1', { type: 'createTable', name: 'T' });
+  const tableId = last('c1', 'state').table.id;
+  await lobby.handle('c2', { type: 'joinTable', tableId });
+  await lobby.handle('c3', { type: 'joinTable', tableId });
+  await lobby.handle('c1', { type: 'leaveTable' });
+  assert.equal(last('c2', 'state').table.you.canStart, true);
+  await lobby.handle('c2', { type: 'startGame' });
+  assert.equal(last('c3', 'state').table.stage, 'preflop');
+  lobby.shutdown();
+});
+
+test('players are told the turn clock and when the next hand is dealt', async () => {
+  const { lobby, last } = setup({ turnTimeoutMs: 5000, nextHandDelayMs: 4000 });
+  await connectNamed(lobby, 'c1', 'Alice');
+  await connectNamed(lobby, 'c2', 'Bob');
+  await lobby.handle('c1', { type: 'createTable', name: 'T' });
+  await lobby.handle('c2', { type: 'joinTable', tableId: last('c1', 'state').table.id });
+  let { timing } = last('c1', 'state').table;
+  assert.deepEqual(timing, { turnTimeoutMs: 5000, nextHandDelayMs: 4000, turnEndsIn: null, nextHandIn: null });
+
+  await lobby.handle('c1', { type: 'startGame' });
+  timing = last('c2', 'state').table.timing;
+  assert.ok(timing.turnEndsIn > 4900 && timing.turnEndsIn <= 5000, 'everyone sees the clock of the player to act');
+  await lobby.handle('c1', { type: 'action', action: 'fold' });
+  timing = last('c1', 'state').table.timing;
+  assert.equal(timing.turnEndsIn, null);
+  assert.ok(timing.nextHandIn > 3900 && timing.nextHandIn <= 4000);
+  lobby.shutdown();
+});
+
+test('the turn clock keeps running when someone else joins the table', async () => {
+  const { lobby, last, all } = setup({ turnTimeoutMs: 150 });
+  for (const [id, name] of [['c1', 'Alice'], ['c2', 'Bob'], ['c3', 'Cid']]) await connectNamed(lobby, id, name);
+  await lobby.handle('c1', { type: 'createTable', name: 'T' });
+  const tableId = last('c1', 'state').table.id;
+  await lobby.handle('c2', { type: 'joinTable', tableId });
+  await lobby.handle('c1', { type: 'startGame' });
+  await wait(100);
+  await lobby.handle('c3', { type: 'joinTable', tableId });
+  assert.ok(last('c3', 'state').table.timing.turnEndsIn < 75, 'joining does not reset the clock');
+  await until(() => last('c1', 'notice'));
+  assert.equal(last('c1', 'notice').message, 'Time ran out, so you folded');
+  assert.equal(all('c2', 'notice').length, 0);
   lobby.shutdown();
 });

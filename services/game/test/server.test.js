@@ -89,6 +89,11 @@ test('two players play over websockets and see each other at the table', async (
   assert.equal(lobbyUpdate.tables.find((t) => t.id === created.table.id).name, 'Socket table');
 
   bob.send({ type: 'joinTable', tableId: created.table.id });
+  // nothing is dealt until the host starts the game
+  const seated = await alice.next((m) => m.type === 'state' && m.table.seats.filter(Boolean).length === 2);
+  assert.equal(seated.table.stage, 'waiting');
+  assert.equal(seated.table.you.canStart, true);
+  alice.send({ type: 'startGame' });
   const started = await alice.next((m) => m.type === 'state' && m.table.stage === 'preflop');
   assert.deepEqual(started.table.seats.filter(Boolean).map((s) => s.name), ['Alice', 'Bob']);
 
