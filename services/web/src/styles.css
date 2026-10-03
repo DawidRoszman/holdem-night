@@ -431,6 +431,16 @@
   .seat .delta.up { @apply bg-success text-primary-foreground; }
   .seat .delta.down { @apply bg-destructive text-destructive-foreground; }
 
+  /* ---------------------------------------------------------- timers */
+  .table-rules { @apply mt-1 text-sm text-muted-foreground; }
+  /* drains while the seat's player is thinking */
+  .turn-clock { @apply mt-1 h-1.5 overflow-hidden rounded-full bg-foreground/20; }
+  .turn-clock > span { @apply block h-full rounded-full bg-success transition-[width] duration-300 ease-linear; }
+  .turn-clock.urgent > span { @apply bg-destructive; }
+  .turn-timer { @apply min-w-24 text-center text-sm font-bold tabular-nums; }
+  .turn-timer.urgent { @apply text-destructive; }
+  .toast.info { @apply border-foreground/30 bg-primary text-primary-foreground; }
+
   /* ---------------------------------------------------------- hand log */
   .log ol { @apply max-h-56 overflow-y-auto; }
   .log li::marker { @apply text-muted-foreground/60; }

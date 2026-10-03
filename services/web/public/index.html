@@ -102,6 +102,7 @@
         <button id="create-table-button" type="submit" class="btn btn-primary">Create table</button>
       </form>
       <p id="buy-in-hint" class="mt-2 text-xs text-muted-foreground">The buy-in (200 to 5,000) is taken from your bank when you sit down, at a table you create or join. Practice tables are free.</p>
+      <p id="lobby-timing" class="mt-1 text-xs text-muted-foreground" hidden></p>
       <h3 class="mt-8 mb-1 text-xs font-bold tracking-[0.14em] text-muted-foreground uppercase">Open tables</h3>
       <ul id="table-list" class="space-y-2"></ul>
       <p id="no-tables" class="border-y-2 border-dashed border-foreground/25 px-4 py-8 text-center text-sm font-medium text-muted-foreground">No tables yet. Create one!</p>
@@ -116,8 +117,11 @@
         <div class="flex-1"></div>
         <button id="rankings-button" type="button" class="btn btn-ghost" aria-haspopup="dialog">Hand rankings</button>
         <button id="add-bot-button" type="button" class="btn btn-secondary">Add bot</button>
+        <button id="start-button" type="button" class="btn btn-primary" hidden>Start game</button>
         <button id="leave-button" type="button" class="btn btn-secondary">Leave table</button>
       </div>
+
+      <p id="table-rules" class="table-rules"></p>
 
       <div class="felt-wrap">
         <div id="felt">
@@ -128,6 +132,7 @@
               <div id="pot" class="rounded-[5px] bg-black/65 px-3 py-1 text-sm font-bold text-primary tabular-nums">Pot: 0</div>
               <div id="status" class="rounded-[5px] bg-black/65 px-3 py-1 text-center text-sm font-medium" aria-live="polite">Waiting for players…</div>
             </div>
+            <div id="next-hand" class="rounded-[5px] bg-black/65 px-3 py-1 text-sm font-medium tabular-nums" role="timer" hidden></div>
           </div>
           <div id="seats"></div>
         </div>
@@ -147,6 +152,7 @@
       </div>
 
       <div id="actions" class="panel flex flex-wrap items-center justify-center gap-2 p-3" hidden>
+        <span id="turn-timer" class="turn-timer" role="timer" hidden></span>
         <button id="fold-button" type="button" class="btn btn-destructive">Fold</button>
         <button id="check-button" type="button" class="btn btn-secondary">Check</button>
         <button id="call-button" type="button" class="btn btn-secondary">Call</button>
@@ -251,6 +257,8 @@
     </dialog>
 
     <div id="toast" class="toast" role="alert" hidden></div>
+    <!-- spoken once per turn when your time is nearly up -->
+    <div id="timer-announcer" class="sr-only" aria-live="assertive"></div>
   </main>
 
   <script type="module" src="app.js"></script>

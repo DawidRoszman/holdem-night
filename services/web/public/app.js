@@ -66,6 +66,7 @@ import { Table3D } from './table3d.js';
     playerId: null,
     table: null,
     screen: null,
+    timing: null, // { turnTimeoutMs, nextHandDelayMs } from the server
     reconnectDelay: 500,
   };
   const CHIP_PACKS = [500, 1000, 5000];
@@ -161,6 +162,8 @@ import { Table3D } from './table3d.js';
         state.name = msg.name;
         savedSession.set({ token: state.token, name: msg.name });
         $('welcome').textContent = `Welcome, ${msg.name}`;
+        state.timing = msg.timing || null;
+        renderLobbyTiming();
         setBank(msg.chips);
         if (!state.table && state.screen !== 'profile') show('lobby');
         break;
@@ -180,11 +183,16 @@ import { Table3D } from './table3d.js';
         break;
       case 'left':
         state.table = null;
+        clocks.turnEnds = null;
+        clocks.nextHand = null;
         closeBustedDialog();
         show('lobby');
         break;
       case 'error':
         toast(msg.message);
+        break;
+      case 'notice':
+        toast(msg.message, 'info');
         break;
       default:
         break;
@@ -256,9 +264,10 @@ import { Table3D } from './table3d.js';
   }
 
   let toastTimer;
-  function toast(text) {
+  function toast(text, tone = 'error') {
     const el = $('toast');
     el.textContent = text;
+    el.className = `toast ${tone}`;
     el.hidden = false;
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { el.hidden = true; }, 3000);
@@ -280,7 +289,7 @@ import { Table3D } from './table3d.js';
       const name = document.createElement('span');
       name.className = 'name';
       name.textContent = t.name;
-      if (t.stage !== 'waiting') {
+      if (t.started) {
         const live = document.createElement('span');
         live.className = 'live';
         live.textContent = 'In play';
@@ -357,7 +366,78 @@ import { Table3D } from './table3d.js';
     return wrap;
   }
 
+  // ------------------------------------------------------------- timings
+
+  const seconds = (ms) => `${Math.round(ms / 1000)}s`;
+
+  // The rules, in plain words: how long a turn lasts and what happens when it runs out.
+  function timingRules(timing) {
+    if (!timing) return '';
+    const turn = timing.turnTimeoutMs > 0
+      ? `Each turn lasts ${seconds(timing.turnTimeoutMs)}; when time runs out you check, or fold if you face a bet.`
+      : 'Turns have no time limit.';
+    return `${turn} Once the host starts the game, the next hand is dealt ${seconds(timing.nextHandDelayMs)} after the last one ends.`;
+  }
+
+  function renderLobbyTiming() {
+    $('lobby-timing').textContent = timingRules(state.timing);
+    $('lobby-timing').hidden = !state.timing;
+  }
+
+  // Countdowns run on the local clock from the time left the server reported,
+  // so they tick smoothly between messages and ignore any clock difference.
+  const clocks = { turnEnds: null, turnTotal: 0, nextHand: null, announced: false };
+
+  function setClocks(t) {
+    const timing = t.timing || {};
+    const now = performance.now();
+    const turnEnds = timing.turnEndsIn == null ? null : now + timing.turnEndsIn;
+    // a new turn may be announced again
+    if (turnEnds === null || clocks.turnEnds === null || Math.abs(turnEnds - clocks.turnEnds) > 1500) clocks.announced = false;
+    clocks.turnEnds = turnEnds;
+    clocks.turnTotal = timing.turnTimeoutMs || 0;
+    clocks.nextHand = timing.nextHandIn == null ? null : now + timing.nextHandIn;
+    tickClocks();
+  }
+
+  function tickClocks() {
+    const now = performance.now();
+    const t = state.table;
+    const turnLeft = clocks.turnEnds === null ? null : Math.max(0, clocks.turnEnds - now);
+    const urgent = turnLeft !== null && turnLeft <= 10_000;
+    const bar = $('turn-clock');
+    if (bar) {
+      bar.classList.toggle('urgent', urgent);
+      bar.firstChild.style.width = `${clocks.turnTotal ? (100 * (turnLeft ?? 0)) / clocks.turnTotal : 0}%`;
+      bar.title = turnLeft === null ? '' : `${Math.ceil(turnLeft / 1000)}s left to act`;
+    }
+    const mine = Boolean(t && t.you && t.you.legal && turnLeft !== null);
+    const timer = $('turn-timer');
+    timer.hidden = !mine;
+    if (mine) {
+      const fallback = t.you.legal.canCheck ? 'check' : 'fold';
+      timer.textContent = `${Math.ceil(turnLeft / 1000)}s left`;
+      timer.title = `When time runs out you ${fallback} automatically`;
+      timer.classList.toggle('urgent', urgent);
+      if (urgent && !clocks.announced) {
+        clocks.announced = true;
+        $('timer-announcer').textContent = `${Math.ceil(turnLeft / 1000)} seconds left, then you ${fallback} automatically`;
+      }
+    }
+    const next = $('next-hand');
+    const nextLeft = clocks.nextHand === null ? null : Math.max(0, clocks.nextHand - now);
+    next.hidden = nextLeft === null;
+    if (nextLeft !== null) next.textContent = `Next hand in ${Math.ceil(nextLeft / 1000)}s`;
+  }
+  setInterval(tickClocks, 250);
+
   function statusText(t) {
+    if (!t.started) {
+      const you = t.you || {};
+      if (you.canStart) return 'Press Start game when everyone is seated';
+      if (you.isHost || t.seats.filter(Boolean).length < 2) return 'Waiting for players…';
+      return `Waiting for ${t.hostName || 'the host'} to start the game`;
+    }
     if (t.stage === 'waiting') return 'Waiting for players…';
     if (t.stage === 'handOver' && t.lastResult) {
       if (!t.lastResult.winners.length) return 'Hand cancelled';
@@ -391,6 +471,10 @@ import { Table3D } from './table3d.js';
     // bots only sit at practice tables
     $('add-bot-button').hidden = !practice;
     $('add-bot-button').disabled = t.seats.every(Boolean);
+    $('start-button').hidden = !(t.you && t.you.isHost && !t.started);
+    $('start-button').disabled = !(t.you && t.you.canStart);
+    $('start-button').title = t.you && t.you.canStart ? '' : 'Needs at least two players with chips';
+    $('table-rules').textContent = [t.hostName ? `Host: ${t.hostName}.` : '', timingRules(t.timing)].filter(Boolean).join(' ');
 
     // chips already in the middle; this street's bets are drawn in front of each seat
     const collected = t.pot - t.seats.reduce((sum, p) => sum + (p ? p.bet : 0), 0);
@@ -458,6 +542,15 @@ import { Table3D } from './table3d.js';
         el.append(hand);
       }
       el.append(chips);
+      // the player to act has a draining clock under their seat
+      if (i === t.toAct && t.timing && t.timing.turnEndsIn != null) {
+        const clock = document.createElement('div');
+        clock.id = 'turn-clock';
+        clock.className = 'turn-clock';
+        clock.setAttribute('aria-hidden', 'true');
+        clock.append(document.createElement('span'));
+        el.append(clock);
+      }
       const delta = t.stage === 'handOver' && t.lastResult && t.lastResult.deltas
         ? t.lastResult.deltas[p.id] : undefined;
       if (delta) {
@@ -504,6 +597,7 @@ import { Table3D } from './table3d.js';
 
     renderActions(t);
     renderResult(t);
+    setClocks(t);
     const log = $('log');
     log.replaceChildren(...t.log.map((line) => {
       const li = document.createElement('li');
@@ -894,6 +988,7 @@ import { Table3D } from './table3d.js';
 
   $('leave-button').addEventListener('click', () => send({ type: 'leaveTable' }));
   $('add-bot-button').addEventListener('click', () => send({ type: 'addBot' }));
+  $('start-button').addEventListener('click', () => send({ type: 'startGame' }));
   $('fold-button').addEventListener('click', () => send({ type: 'action', action: 'fold' }));
   $('check-button').addEventListener('click', () => send({ type: 'action', action: 'check' }));
   $('call-button').addEventListener('click', () => send({ type: 'action', action: 'call' }));
