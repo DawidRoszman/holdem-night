@@ -231,12 +231,14 @@ import { Table3D } from './table3d.js';
     state.name = null;
     state.bank = null;
     state.playerId = null;
+    // logging out leaves the table for good (a dropped connection would hold the seat for a while)
+    if (state.table) send({ type: 'leaveTable' });
     state.table = null;
     closeBustedDialog();
     renderUser();
     $('password-input').value = '';
     show('login');
-    // dropping the connection makes the server release our seat (and pay it back); we reconnect anonymously
+    // the server cashes our stack out; we reconnect anonymously
     if (state.ws) state.ws.close();
   }
 
@@ -256,11 +258,19 @@ import { Table3D } from './table3d.js';
     $('auth-error').hidden = false;
   }
 
+  // Home is the lobby once logged in. A seated player stays at their table:
+  // getting to the lobby means leaving it, which would fold a hand in play.
+  function goHome() {
+    if (!state.token) show('login');
+    else if (!state.table) show('lobby');
+  }
+
   function show(screen) {
     if (state.screen === 'profile' && screen !== 'profile') closeProfile();
     state.screen = screen;
     for (const s of ['login', 'lobby', 'table', 'profile']) $(`screen-${s}`).hidden = s !== screen;
     $('profile-button').disabled = Boolean(state.table);
+    $('home-link').title = state.table ? 'Leave the table to go back to the lobby' : 'Home';
   }
 
   let toastTimer;
@@ -376,7 +386,11 @@ import { Table3D } from './table3d.js';
     const turn = timing.turnTimeoutMs > 0
       ? `Each turn lasts ${seconds(timing.turnTimeoutMs)}; when time runs out you check, or fold if you face a bet.`
       : 'Turns have no time limit.';
-    return `${turn} Once the host starts the game, the next hand is dealt ${seconds(timing.nextHandDelayMs)} after the last one ends.`;
+    const parts = [turn, `Once the host starts the game, the next hand is dealt ${seconds(timing.nextHandDelayMs)} after the last one ends.`];
+    if (timing.reconnectGraceMs > 0) {
+      parts.push(`If you lose connection or reload the page, your seat is held for ${seconds(timing.reconnectGraceMs)}.`);
+    }
+    return parts.join(' ');
   }
 
   function renderLobbyTiming() {
@@ -502,6 +516,7 @@ import { Table3D } from './table3d.js';
       if (i === t.toAct) el.classList.add('turn');
       if (p.folded) el.classList.add('folded');
       if (p.busted) el.classList.add('busted');
+      if (p.away) el.classList.add('away');
       if (winners.some((w) => w.id === p.id)) el.classList.add('winner');
       if (table3d) {
         table3d.pin(el, table3d.seatPoint(rel, t.maxPlayers));
@@ -542,6 +557,13 @@ import { Table3D } from './table3d.js';
         el.append(hand);
       }
       el.append(chips);
+      if (p.away) {
+        const away = document.createElement('div');
+        away.className = 'away-label';
+        away.textContent = 'Reconnecting…';
+        away.title = `${p.name} lost connection; their seat is held for a while`;
+        el.append(away);
+      }
       // the player to act has a draining clock under their seat
       if (i === t.toAct && t.timing && t.timing.turnEndsIn != null) {
         const clock = document.createElement('div');
@@ -946,6 +968,12 @@ import { Table3D } from './table3d.js';
 
   $('logout-button').addEventListener('click', logOut);
   $('profile-button').addEventListener('click', openProfile);
+  $('home-link').addEventListener('click', (e) => {
+    // ordinary clicks stay in the page; ctrl/cmd/middle-click still open a new tab
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    goHome();
+  });
   $('profile-back').addEventListener('click', () => show(state.table ? 'table' : 'lobby'));
 
   $('login-form').addEventListener('submit', async (e) => {

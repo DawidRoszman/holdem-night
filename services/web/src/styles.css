@@ -215,6 +215,10 @@
     @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium;
   }
 
+  /* the logo and title go back to the home page (the lobby, or the login screen) */
+  .home-link { @apply flex items-center gap-2 rounded-md font-bold tracking-tight; }
+  .home-link:hover { @apply underline underline-offset-4; }
+
   /* your initial (and name, on wider screens) in the header opens the profile */
   .profile-chip {
     @apply inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-full px-1 text-sm text-muted-foreground
@@ -424,6 +428,8 @@
 
   .seat.winner { @apply shadow-[0_0_0_3px_#e2b866,0_0_26px_#e2b866aa]; }
   .seat.busted { @apply opacity-60 grayscale; }
+  .seat.away { @apply border-dashed opacity-75; }
+  .seat .away-label { @apply text-[11px] font-bold text-warning; }
   .seat .delta {
     @apply absolute -top-3 -right-3 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums shadow-md shadow-black/40
       animate-[chip-in_240ms_ease-out];
