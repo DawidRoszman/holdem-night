@@ -1,0 +1,12 @@
+{
+  "name": "evaluator-service",
+  "version": "1.0.0",
+  "description": "Texas Hold'em hand evaluator microservice",
+  "main": "src/server.js",
+  "private": true,
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "engines": { "node": ">=20" }
+}
