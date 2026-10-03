@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1b241f">
+  <title>Hold'em Night</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="sticky top-0 z-20 border-b bg-background/80 backdrop-blur">
+    <div class="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
+      <span class="flex items-center gap-2 font-bold tracking-tight">
+        <span aria-hidden="true" class="wood grid size-7 place-items-center rounded-md border">♠</span>
+        Hold'em Night
+      </span>
+      <div class="flex items-center gap-3">
+        <span id="connection" class="connection" role="status">Connecting…</span>
+        <div id="user-menu" class="flex items-center gap-2" hidden>
+          <span id="bank" class="bank" title="Chips in your bank"><span class="bank-chip" aria-hidden="true"></span><span class="sr-only">Bank: </span><span id="bank-amount" class="tabular-nums">0</span></span>
+          <span class="hidden items-center gap-1.5 text-sm text-muted-foreground sm:inline-flex">
+            <span id="user-initial" aria-hidden="true" class="grid size-7 place-items-center rounded-full border border-current text-xs font-bold"></span>
+            <span id="user-name" class="max-w-40 truncate font-medium text-foreground"></span>
+          </span>
+          <button id="logout-button" type="button" class="btn btn-ghost min-h-9 px-3">Log out</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-6xl px-4 py-6 sm:py-10">
+    <!-- Log in / register -->
+    <section id="screen-login" class="panel mx-auto max-w-md p-6 sm:p-8">
+      <div class="mb-6 flex gap-1.5 text-2xl" aria-hidden="true">
+        <span class="card red h-12 w-9 -rotate-6 text-base">A♥</span>
+        <span class="card h-12 w-9 rotate-3 text-base">A♠</span>
+      </div>
+      <h1 class="text-3xl font-bold tracking-tight">Texas Hold'em</h1>
+      <p class="mt-2 text-muted-foreground">No-limit, up to six players a table. Play friends or bots. New accounts start with 1,000 chips.</p>
+      <form id="login-form" class="mt-6 space-y-4">
+        <div>
+          <label for="username-input" class="label">Username</label>
+          <input id="username-input" name="username" class="input" placeholder="Your username" minlength="3" maxlength="20" autocomplete="username" autocapitalize="off" spellcheck="false" required>
+        </div>
+        <div>
+          <label for="password-input" class="label">Password</label>
+          <input id="password-input" name="password" type="password" class="input" placeholder="At least 6 characters" minlength="6" maxlength="128" autocomplete="current-password" required>
+        </div>
+        <p id="auth-error" class="auth-error" role="alert" hidden></p>
+        <div class="flex flex-col gap-2 sm:flex-row">
+          <button id="login-button" type="submit" name="mode" value="login" class="btn btn-primary flex-1">Log in</button>
+          <button id="register-button" type="submit" name="mode" value="register" class="btn btn-secondary flex-1">Create account</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Lobby -->
+    <section id="screen-lobby" class="panel mx-auto max-w-2xl p-6 sm:p-8" hidden>
+      <h2 id="welcome" class="text-2xl font-bold tracking-tight">Lobby</h2>
+      <p class="mt-1 text-sm text-muted-foreground">Buy chips, then open a new table or join one below.</p>
+
+      <div class="shop mt-6">
+        <div class="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 class="text-xs font-bold tracking-[0.14em] text-muted-foreground uppercase">Your bank</h3>
+          <p class="text-2xl font-bold tabular-nums"><span id="shop-balance">0</span> <span class="text-sm font-medium text-muted-foreground">chips</span></p>
+        </div>
+        <p class="mt-1 text-sm text-muted-foreground">Play money: packs are free. Chips you take to a table come back when you leave it.</p>
+        <div class="mt-3 grid grid-cols-3 gap-2">
+          <button id="buy-500" type="button" class="btn btn-secondary pack" data-amount="500">+500</button>
+          <button id="buy-1000" type="button" class="btn btn-secondary pack" data-amount="1000">+1,000</button>
+          <button id="buy-5000" type="button" class="btn btn-secondary pack" data-amount="5000">+5,000</button>
+        </div>
+      </div>
+
+      <form id="create-form" class="mt-6 flex flex-col gap-2 sm:flex-row sm:items-end">
+        <div class="flex-1">
+          <label for="table-name-input" class="label">Table name</label>
+          <input id="table-name-input" name="table" class="input" placeholder="Table name" maxlength="20" autocomplete="off">
+        </div>
+        <div class="sm:w-32">
+          <label for="buy-in-input" class="label">Buy-in</label>
+          <input id="buy-in-input" name="buyIn" type="number" inputmode="numeric" class="input tabular-nums" value="1000" min="200" max="5000" step="100" required>
+        </div>
+        <button id="create-table-button" type="submit" class="btn btn-primary">Create table</button>
+      </form>
+      <p class="mt-2 text-xs text-muted-foreground">The buy-in (200 to 5,000) is taken from your bank when you sit down, at a table you create or join.</p>
+      <h3 class="mt-8 mb-1 text-xs font-bold tracking-[0.14em] text-muted-foreground uppercase">Open tables</h3>
+      <ul id="table-list" class="space-y-2"></ul>
+      <p id="no-tables" class="border-y-2 border-dashed border-foreground/25 px-4 py-8 text-center text-sm font-medium text-muted-foreground">No tables yet. Create one!</p>
+    </section>
+
+    <!-- Table -->
+    <section id="screen-table" hidden>
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <h2 id="table-title" class="text-2xl font-bold tracking-tight">Table</h2>
+        <span id="blinds" class="text-sm text-muted-foreground tabular-nums"></span>
+        <div class="flex-1"></div>
+        <button id="rankings-button" type="button" class="btn btn-ghost" aria-haspopup="dialog">Hand rankings</button>
+        <button id="add-bot-button" type="button" class="btn btn-secondary">Add bot</button>
+        <button id="leave-button" type="button" class="btn btn-secondary">Leave table</button>
+      </div>
+
+      <div class="felt-wrap">
+        <div id="felt">
+          <div id="table-center" class="table-center">
+            <div id="board" class="board flex min-h-16 gap-1.5"></div>
+            <div id="pot-chips" class="min-h-10"></div>
+            <div class="flex flex-wrap items-center justify-center gap-2">
+              <div id="pot" class="rounded-[5px] bg-black/65 px-3 py-1 text-sm font-bold text-primary tabular-nums">Pot: 0</div>
+              <div id="status" class="rounded-[5px] bg-black/65 px-3 py-1 text-center text-sm font-medium" aria-live="polite">Waiting for players…</div>
+            </div>
+          </div>
+          <div id="seats"></div>
+        </div>
+      </div>
+
+      <div id="result-banner" class="result-banner" role="status" aria-live="polite" hidden>
+        <span id="result-icon" class="result-icon" aria-hidden="true"></span>
+        <div class="min-w-0 flex-1">
+          <p id="result-title" class="result-title"></p>
+          <p id="result-detail" class="result-detail"></p>
+        </div>
+        <div id="result-cards" class="result-cards" aria-label="Winning hand" hidden></div>
+        <div id="result-actions" class="flex shrink-0 gap-2" hidden>
+          <button id="bust-leave-inline" type="button" class="btn btn-secondary">Back to lobby</button>
+          <button id="rebuy-inline" type="button" class="btn btn-primary">Rebuy</button>
+        </div>
+      </div>
+
+      <div id="actions" class="panel flex flex-wrap items-center justify-center gap-2 p-3" hidden>
+        <button id="fold-button" type="button" class="btn btn-destructive">Fold</button>
+        <button id="check-button" type="button" class="btn btn-secondary">Check</button>
+        <button id="call-button" type="button" class="btn btn-secondary">Call</button>
+        <div class="flex gap-1.5">
+          <input id="raise-input" type="number" inputmode="numeric" class="input w-28 tabular-nums" aria-label="Raise amount">
+          <button id="raise-button" type="button" class="btn btn-primary">Raise</button>
+        </div>
+        <button id="allin-button" type="button" class="btn btn-warning">All-in</button>
+      </div>
+
+      <details class="log panel mt-4 px-4 py-3" open>
+        <summary class="cursor-pointer text-sm font-medium text-muted-foreground">Hand log</summary>
+        <ol id="log" class="mt-2 list-decimal space-y-0.5 pl-6 text-sm"></ol>
+      </details>
+    </section>
+
+    <!-- Hand rankings cheat sheet -->
+    <dialog id="rankings-dialog" class="modal" aria-labelledby="rankings-title">
+      <div class="flex items-center justify-between gap-3">
+        <h2 id="rankings-title" class="text-xl font-bold tracking-tight">Hand rankings</h2>
+        <button id="rankings-close" type="button" class="btn btn-secondary" aria-label="Close hand rankings">Close</button>
+      </div>
+      <p class="mt-1 mb-3 text-sm text-muted-foreground">Best five cards from your two hole cards plus the five on the board. Strongest first.</p>
+      <ol id="rankings-list" class="rankings"></ol>
+    </dialog>
+
+    <!-- Out of chips -->
+    <dialog id="busted-dialog" class="modal max-w-md" aria-labelledby="busted-title">
+      <div class="glyph text-destructive" aria-hidden="true">0</div>
+      <h2 id="busted-title" class="mt-2 text-xl font-bold tracking-tight">You're out of chips</h2>
+      <p id="busted-detail" class="mt-2 text-sm text-muted-foreground"></p>
+      <p id="busted-bank" class="mt-3 text-sm font-medium"></p>
+      <div class="mt-6 flex flex-wrap justify-end gap-2">
+        <button id="bust-leave-button" type="button" class="btn btn-secondary">Back to lobby</button>
+        <button id="rebuy-button" type="button" class="btn btn-primary">Rebuy chips</button>
+      </div>
+    </dialog>
+
+    <div id="toast" class="toast" role="alert" hidden></div>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

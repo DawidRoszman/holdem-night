@@ -1,0 +1,20 @@
+{
+  "name": "web-client",
+  "version": "1.0.0",
+  "description": "Texas Hold'em browser client (static; Tailwind CSS + three.js table)",
+  "private": true,
+  "scripts": {
+    "build": "npm run build:css && npm run build:js",
+    "build:css": "tailwindcss -i src/styles.css -o public/style.css --minify",
+    "build:js": "esbuild src/table3d.js --bundle --format=esm --minify --target=es2022 --outfile=public/table3d.js",
+    "watch:css": "tailwindcss -i src/styles.css -o public/style.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "esbuild": "^0.28.2",
+    "tailwindcss": "^4.3.3"
+  },
+  "dependencies": {
+    "three": "^0.186.1"
+  }
+}

@@ -1,0 +1,424 @@
+@import "tailwindcss";
+
+/* Scan the client markup and the classes app.js builds at runtime. */
+@source "../public";
+
+/*
+ * shadcn/ui-style semantic tokens. Components only ever reference these,
+ * so the whole look can be re-themed from this one block.
+ */
+/*
+ * "Nature / wood" theme: a dark olive room with a sage glow, light oak
+ * surfaces with dark engraved text, and a moss-green table.
+ */
+:root {
+  color-scheme: dark;
+  --radius: 0.625rem;
+
+  --background: #11120d;
+  --foreground: #f3ecdc;
+  --card: #d4b78f;
+  --card-foreground: #1e1913;
+  --popover: #d4b78f;
+  --primary: #d6b688;            /* light oak */
+  --primary-foreground: #1e1913;
+  --secondary: rgb(236 228 212 / 0.08);
+  --secondary-foreground: var(--foreground);
+  --muted: rgb(236 228 212 / 0.06);
+  --muted-foreground: #cfc5ae;
+  --accent: rgb(236 228 212 / 0.14);
+  --destructive: #b9583a;        /* terracotta */
+  --destructive-foreground: #fff7ee;
+  --warning: #c48a38;            /* ochre */
+  --success: #9db979;            /* sage */
+  --border: rgb(236 228 212 / 0.14);
+  --input: rgb(236 228 212 / 0.2);
+  --ring: #9db979;
+
+  --felt: #556b3d;
+  --felt-dark: #35452a;
+  --rail: #a07a4e;
+  --card-face: #f7f1e3;
+  --suit-red: #a8361f;
+  --suit-black: #1e1913;
+
+  /* oak grain: stretched fractal noise tinted brown, laid over the base colour */
+  --wood-grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1600' height='480'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.005 0.1' numOctaves='3' seed='4' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.30  0 0 0 0 0.19  0 0 0 0 0.08  0 0 0 0.3 0'/></filter><rect width='100%' height='100%' filter='url(%23g)'/></svg>");
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-felt: var(--felt);
+  --color-felt-dark: var(--felt-dark);
+  --color-rail: var(--rail);
+  --color-card-face: var(--card-face);
+  --color-suit-red: var(--suit-red);
+  --color-suit-black: var(--suit-black);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply min-h-dvh bg-background font-sans text-foreground antialiased;
+    background-image:
+      radial-gradient(ellipse 70% 60% at 95% 105%, rgb(122 140 90 / 0.5), transparent 70%),
+      radial-gradient(ellipse 60% 50% at 0% 0%, rgb(62 58 42 / 0.45), transparent 70%);
+    background-attachment: fixed;
+  }
+  [hidden] {
+    display: none !important;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-ring;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* ---------------------------------------------------------- buttons */
+  /* Carved blocks: a solid bottom edge that presses in, small-caps lettering.
+     (Small caps, not uppercase, so the button text itself is unchanged.) */
+  .btn {
+    --edge: rgb(0 0 0 / 0.55);
+    @apply relative inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-[5px] border-2 border-transparent px-5
+      text-[15px] font-bold tracking-[0.06em] whitespace-nowrap [font-variant-caps:all-small-caps]
+      transition-[background-color,box-shadow,transform,color] duration-100 select-none
+      disabled:pointer-events-none disabled:opacity-40;
+    box-shadow: 0 3px 0 var(--edge);
+  }
+  .btn:active { transform: translateY(3px); box-shadow: 0 0 0 var(--edge); }
+  .btn-primary {
+    --edge: #5e4526;
+    @apply bg-primary text-primary-foreground [text-shadow:none] hover:bg-[color-mix(in_oklab,var(--primary),white_12%)];
+  }
+  .wood .btn-primary, .panel .btn-primary, .modal .btn-primary, .result-banner .btn-primary { --edge: #000; }
+  .btn-secondary {
+    --edge: transparent;
+    @apply border-current bg-transparent text-foreground hover:bg-foreground/10;
+    box-shadow: none;
+  }
+  .btn-secondary:active { box-shadow: none; }
+  .btn-ghost {
+    --edge: transparent;
+    @apply px-2 text-foreground underline-offset-[6px] hover:underline;
+    box-shadow: none;
+  }
+  .btn-destructive {
+    --edge: #4d1c0e;
+    @apply bg-destructive text-destructive-foreground [text-shadow:none] hover:brightness-110;
+  }
+  .btn-warning {
+    --edge: #4a2f0a;
+    @apply bg-warning text-destructive-foreground [text-shadow:none] hover:brightness-110;
+  }
+
+  /* ---------------------------------------------------------- forms */
+  .input {
+    @apply min-h-11 w-full rounded-[5px] border-2 border-input bg-background px-3 text-base text-foreground
+      transition-colors placeholder:text-muted-foreground/80 [text-shadow:none]
+      focus-visible:border-ring focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/30;
+    box-shadow: inset 0 2px 3px rgb(40 28 15 / 0.18);
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-muted-foreground;
+  }
+  .auth-error {
+    @apply rounded-[5px] border-2 border-destructive/60 bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive;
+  }
+
+  /* ---------------------------------------------------------- bank */
+  /* balance pill in the header: a little gold chip and the amount */
+  .bank {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-primary/50 px-2.5 py-0.5 text-sm font-bold text-primary;
+  }
+  .bank-chip {
+    @apply size-3.5 rounded-full;
+    background: repeating-conic-gradient(#c9a227 0 30deg, #f5ecd0 30deg 45deg);
+    box-shadow: inset 0 0 0 3px #c9a227, 0 0 0 1px rgb(0 0 0 / 0.5);
+  }
+  .bank.bump { animation: bank-bump 420ms ease-out; }
+  @keyframes bank-bump {
+    40% { transform: scale(1.12); }
+  }
+  /* the chip shop sits recessed into the lobby panel */
+  .shop {
+    @apply rounded-lg border-2 border-dashed border-foreground/30 p-4;
+    background: rgb(255 248 235 / 0.25);
+  }
+  .pack { @apply px-2 tabular-nums; }
+
+  /* ---------------------------------------------------------- surfaces */
+  /* Oak surfaces carry their own dark-on-wood palette, so every component
+     inside them (buttons, inputs, muted text) adapts automatically. */
+  .wood, .panel, .modal, .seat, .result-banner {
+    --foreground: #15110c;
+    --card-foreground: #15110c;
+    --muted-foreground: #3b2e20;
+    --border: rgb(40 28 15 / 0.35);
+    --input: rgb(40 28 15 / 0.5);
+    --secondary: rgb(40 28 15 / 0.08);
+    --secondary-foreground: #15110c;
+    --accent: rgb(40 28 15 / 0.14);
+    --primary: #1c1712;
+    --primary-foreground: #f5e9d0;
+    --background: #f3e8d2;
+    --ring: #2f4a1d;
+    --success: #2f4a1d;
+    --destructive: #8a3820;
+    --warning: #7a4e14;
+    --edge: #000000;
+    color: var(--foreground);
+    background-color: var(--card);
+    background-image:
+      linear-gradient(160deg, rgb(255 244 222 / 0.28), transparent 45%, rgb(60 40 20 / 0.12)),
+      var(--wood-grain);
+    background-size: auto, 1600px 480px;
+    text-shadow: 0 1px 0 rgb(255 246 230 / 0.35); /* engraved look */
+  }
+  .panel {
+    @apply rounded-xl border;
+    box-shadow: inset 0 1px 0 rgb(255 250 240 / 0.45), inset 0 -2px 0 rgb(60 40 20 / 0.25), 0 24px 48px -16px rgb(0 0 0 / 0.7);
+  }
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  /* ---------------------------------------------------------- connection pill */
+  .connection {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium text-muted-foreground;
+  }
+  .connection::before {
+    content: "";
+    @apply size-2 rounded-full bg-muted-foreground;
+  }
+  .connection.ok { @apply border-success/40 text-success; }
+  .connection.ok::before { @apply bg-success; }
+  .connection.bad { @apply border-destructive/50 text-destructive; }
+  .connection.bad::before { @apply animate-pulse bg-destructive; }
+
+  /* ---------------------------------------------------------- lobby */
+  /* not ".table-row": that name is Tailwind's display: table-row utility */
+  .lobby-row {
+    @apply flex items-center gap-4 border-b-2 border-dashed border-foreground/25 px-1 py-3 transition-colors first:border-t-2;
+  }
+  .lobby-row .avatar {
+    @apply grid size-10 shrink-0 place-items-center rounded-full border-2 border-current text-lg text-foreground;
+  }
+  .lobby-row .details { @apply flex min-w-0 flex-1 flex-col gap-0.5; }
+  .lobby-row .name { @apply truncate font-semibold; }
+  .lobby-row .meta { @apply text-sm text-muted-foreground tabular-nums; }
+  .lobby-row .live {
+    @apply ml-2 inline-flex items-center gap-1 rounded-[4px] border border-current px-1.5 text-xs font-bold text-success;
+  }
+
+  /* ---------------------------------------------------------- felt + seats */
+  .felt-wrap { @apply px-4 pt-14 pb-20 sm:px-16; }
+  .felt-wrap:has(> .felt-3d) { @apply overflow-x-clip px-0 pt-2 pb-4; }
+  .table-center { @apply absolute inset-0 z-[1] flex flex-col items-center justify-center gap-2; }
+
+  /* three.js table: the canvas fills the box, DOM overlays are pinned to 3D points */
+  .felt-3d { @apply relative aspect-[16/9] w-full; }
+  .felt-3d .table3d-canvas { @apply absolute inset-0 size-full; }
+  .felt-3d .table-center { @apply pointer-events-none inset-auto -translate-x-1/2 -translate-y-8; }
+  .felt-3d #pot-chips { @apply hidden; }
+  .felt-3d .seat { @apply z-20; }
+  .felt-label { @apply absolute z-10 -translate-x-1/2 translate-y-3 shadow-md shadow-black/40 animate-[chip-in_240ms_ease-out]; }
+  .felt-label.win { @apply bg-success text-primary-foreground; }
+
+  .felt {
+    @apply relative aspect-[2/1] rounded-[50%] border-[14px] border-rail;
+    background: radial-gradient(ellipse at center, var(--felt) 0%, var(--felt-dark) 78%);
+    box-shadow:
+      inset 0 0 0 2px oklch(1 0 0 / 0.06),
+      inset 0 0 60px oklch(0 0 0 / 0.5),
+      0 18px 40px -12px oklch(0 0 0 / 0.7);
+  }
+  .seat {
+    @apply absolute w-34 -translate-x-1/2 -translate-y-1/2 rounded-lg border-2 border-border px-2 py-1.5
+      text-center text-xs shadow-lg shadow-black/50 transition-[opacity,box-shadow,border-color];
+  }
+  .seat.me { @apply border-primary/70; }
+  .seat.turn { @apply border-[#3f5a2a] shadow-[0_0_0_3px_#9db979,0_0_22px_#9db979aa]; }
+  .seat.folded { @apply opacity-80 saturate-50; }
+  .seat.folded .cards { @apply opacity-60; }
+  .seat .pname { @apply flex items-center justify-center gap-1 truncate text-sm font-bold; }
+  .seat .chips { @apply font-medium text-muted-foreground tabular-nums; }
+  .seat .cards { @apply my-1 flex min-h-10 justify-center gap-1; }
+  .seat .bet { @apply min-h-4 font-semibold text-primary tabular-nums; }
+  .seat .tag {
+    @apply inline-grid size-5 shrink-0 place-items-center rounded-full bg-primary text-[10px] font-black text-primary-foreground shadow [text-shadow:none];
+  }
+
+  /* ---------------------------------------------------------- playing cards */
+  .card {
+    @apply inline-flex h-16 w-11 items-center justify-center rounded-md bg-card-face text-lg font-bold text-suit-black
+      shadow-md shadow-black/40 ring-1 ring-black/10 [text-shadow:none];
+  }
+  .card.red { @apply text-suit-red; }
+  .card.back {
+    @apply text-transparent ring-2 ring-card-face [text-shadow:none];
+    background:
+      radial-gradient(circle, transparent 0 22%, #2a2118 23% 26%, transparent 27%),
+      repeating-conic-gradient(#2a2118 0 6deg, transparent 6deg 15deg) center / 100% 100%,
+      #c5a37a;
+  }
+  .board .card { @apply animate-[deal_220ms_ease-out]; }
+  .seat .card { @apply h-10 w-7.5 text-[13px]; }
+
+  /* ---------------------------------------------------------- poker chips */
+  .chip {
+    --chip: oklch(0.95 0.005 90);
+    --stripe: oklch(0.5 0.15 255);
+    @apply block size-6 shrink-0 rounded-full;
+    background:
+      radial-gradient(circle closest-side, var(--chip) 0 52%, oklch(1 0 0 / 0.75) 53% 58%, var(--chip) 59% 66%, transparent 67%),
+      repeating-conic-gradient(var(--chip) 0 22.5deg, var(--stripe) 22.5deg 45deg);
+    box-shadow: 0 1px 0 oklch(0 0 0 / 0.55), inset 0 0 0 1px oklch(0 0 0 / 0.25);
+  }
+  .chip-white { --chip: oklch(0.95 0.005 90); --stripe: oklch(0.5 0.15 255); }
+  .chip-red { --chip: oklch(0.55 0.2 25); --stripe: oklch(0.97 0 0); }
+  .chip-green { --chip: oklch(0.55 0.14 150); --stripe: oklch(0.97 0 0); }
+  .chip-black { --chip: oklch(0.24 0.01 260); --stripe: oklch(0.97 0 0); }
+  .chip-purple { --chip: oklch(0.45 0.17 300); --stripe: oklch(0.97 0 0); }
+  .chip-gold { --chip: oklch(0.8 0.14 85); --stripe: oklch(0.3 0.05 70); }
+
+  .chip-stack { @apply flex flex-col items-center gap-0.5; }
+  .chip-columns { @apply flex items-end gap-0.5; }
+  .chip-col { @apply flex flex-col items-center; }
+  /* chips under the top one are drawn edge-on, so the stack height shows the count */
+  .chip.edge {
+    @apply -mt-0.5 h-1.5 rounded-[3px];
+    background: repeating-linear-gradient(90deg, var(--chip) 0 4px, var(--stripe) 4px 6px);
+    box-shadow: inset 0 -1px 0 oklch(0 0 0 / 0.35), 0 1px 0 oklch(0 0 0 / 0.4);
+  }
+  .chip-col .chip:first-child { @apply relative z-10; }
+  .chip-amount {
+    @apply rounded-[4px] bg-black/70 px-2 text-xs font-bold text-foreground tabular-nums empty:hidden;
+  }
+  .chip-stack.on-felt {
+    @apply pointer-events-auto absolute z-10 -translate-x-1/2 -translate-y-1/2 animate-[chip-in_240ms_ease-out];
+  }
+  .chip-stack.win .chip-amount { @apply bg-success text-primary-foreground; }
+  .chip-stack.pot .chip:not(.edge) { @apply size-7; }
+  .chip-stack.pot .chip.edge { @apply h-2 w-7; }
+  .seat .chips { @apply flex items-center justify-center gap-1.5; }
+  .seat .chips .chip { @apply size-3.5; }
+
+  /* ---------------------------------------------------------- hand result */
+  .result-banner {
+    @apply mb-3 flex flex-wrap items-center gap-x-4 gap-y-3 rounded-xl border border-l-[6px] px-4 py-3
+      shadow-lg shadow-black/40 animate-[pop_200ms_ease-out];
+  }
+  .result-banner.win { @apply border-l-success; }
+  .result-banner.loss { @apply border-l-destructive; }
+  .result-banner.neutral { @apply border-l-primary; }
+  /* simple engraved roundel instead of emoji */
+  .glyph, .result-icon {
+    @apply grid size-11 shrink-0 place-items-center rounded-full border-2 border-current text-xl leading-none font-bold;
+  }
+  .result-banner.win .result-icon { @apply text-success; }
+  .result-banner.loss .result-icon { @apply text-destructive; }
+  .result-title { @apply text-lg font-bold tracking-tight; }
+  .result-banner.win .result-title { @apply text-success; }
+  .result-detail { @apply text-sm font-medium text-muted-foreground; }
+
+  .result-cards { @apply flex shrink-0 gap-1; }
+  .result-cards .card { @apply h-11 w-8 text-sm; }
+  .card.win-card { @apply -translate-y-1 ring-3 ring-primary shadow-lg shadow-primary/40 transition-transform; }
+  .card.dim-card { @apply opacity-40 saturate-50; }
+  .seat .hand-label { @apply mb-0.5 truncate text-[11px] font-semibold text-primary; }
+
+  .seat.winner { @apply shadow-[0_0_0_3px_#e2b866,0_0_26px_#e2b866aa]; }
+  .seat.busted { @apply opacity-60 grayscale; }
+  .seat .delta {
+    @apply absolute -top-3 -right-3 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums shadow-md shadow-black/40
+      animate-[chip-in_240ms_ease-out];
+  }
+  .seat .delta.up { @apply bg-success text-primary-foreground; }
+  .seat .delta.down { @apply bg-destructive text-destructive-foreground; }
+
+  /* ---------------------------------------------------------- hand log */
+  .log ol { @apply max-h-56 overflow-y-auto; }
+  .log li::marker { @apply text-muted-foreground/60; }
+
+  /* ---------------------------------------------------------- modal */
+  .modal {
+    @apply m-auto max-h-[calc(100dvh-3rem)] w-[min(36rem,calc(100%-2rem))] rounded-xl border p-6 shadow-2xl shadow-black/60;
+  }
+  .modal[open] { @apply animate-[pop_160ms_ease-out]; }
+  .modal::backdrop { @apply bg-black/65 backdrop-blur-sm; }
+  .rankings li {
+    @apply grid grid-cols-[1.5rem_1fr_auto] items-center gap-x-3 border-t py-1.5;
+  }
+  .rankings .rank-no { @apply row-span-2 font-bold text-primary tabular-nums; }
+  .rankings .rank-name { @apply font-semibold; }
+  .rankings .rank-desc { @apply col-start-2 text-[13px] text-muted-foreground; }
+  .rankings .rank-cards { @apply col-start-3 row-span-2 row-start-1 flex gap-0.5; }
+  .rankings .card { @apply h-8 w-6 text-[11px]; }
+
+  /* ---------------------------------------------------------- toast */
+  .toast {
+    @apply fixed bottom-6 left-1/2 z-50 max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-lg border border-destructive/40
+      bg-destructive px-4 py-3 text-sm font-semibold text-destructive-foreground shadow-xl shadow-black/40 animate-[pop_160ms_ease-out];
+  }
+}
+
+@layer utilities {
+  @media (max-width: 40rem) {
+    .felt { @apply aspect-[1/1.15] rounded-[40%/30%]; }
+    .felt-3d { @apply aspect-[4/5]; }
+    .seat { @apply w-24 text-[11px]; }
+    .seat .card { @apply h-8.5 w-6 text-[11px]; }
+    .card { @apply h-12 w-8.5 text-sm; }
+    .chip:not(.edge) { @apply size-4.5; }
+    .chip.edge { @apply h-1 w-4.5; }
+    .chip-stack.pot .chip:not(.edge) { @apply size-5; }
+    .chip-stack.pot .chip.edge { @apply h-1.5 w-5; }
+    .rankings .rank-cards { @apply col-start-2 row-span-1 row-start-auto mt-1; }
+  }
+}
+
+@keyframes deal {
+  from { opacity: 0; transform: translateY(-8px) scale(0.92); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes chip-in {
+  from { opacity: 0; scale: 0.6; }
+  to { opacity: 1; scale: 1; }
+}
+@keyframes pop {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
