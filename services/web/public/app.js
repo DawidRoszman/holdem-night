@@ -863,6 +863,15 @@ import { Table3D } from './table3d.js';
   const formatDate = (ms) => new Date(ms).toLocaleDateString(undefined, { dateStyle: 'medium' });
   const formatWhen = (ms) => new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
   const percent = (part, whole) => (whole ? `${Math.round((part / whole) * 100)}%` : '–');
+  // a signed share of what was put in: +60%, −3.5% (one decimal below 10%)
+  const signedPercent = (part, whole) => {
+    if (!whole) return '–';
+    const pct = (part / whole) * 100;
+    const abs = Math.abs(pct);
+    const text = abs > 0 && abs < 10 ? abs.toFixed(1).replace(/\.0$/, '') : String(Math.round(abs));
+    return pct > 0 ? `+${text}%` : pct < 0 ? `\u2212${text}%` : '0%';
+  };
+  const plural = (n, word) => `${formatChips(n)} ${word}${n === 1 ? '' : 's'}`;
   const tone = (n) => (n > 0 ? 'up' : n < 0 ? 'down' : '');
 
   function cell(text, className = '') {
@@ -920,16 +929,26 @@ import { Table3D } from './table3d.js';
     $('profile-since').textContent = `Playing since ${formatDate(user.createdAt)}`;
     setBank(user.chips);
 
-    const hands = (s) => `${formatChips(s.handsWon)} of ${formatChips(s.hands)} hands won`;
+    // counts first, with the share in brackets: "13 of 28 hands won (46%)"
+    const handsWon = (s) => `${formatChips(s.handsWon)} of ${plural(s.hands, 'hand')} won (${percent(s.handsWon, s.hands)})`;
     $('profile-stats').replaceChildren(
-      stat('Net result', formatSigned(money.net), { className: tone(money.net) }),
-      stat('Chips won', formatChips(money.earned), { sub: 'in winning games' }),
-      stat('Chips lost', formatChips(money.lost), { sub: 'in losing games' }),
+      stat('Net result', formatSigned(money.net), {
+        className: tone(money.net),
+        sub: `on ${formatChips(money.boughtIn)} bought in (${signedPercent(money.net, money.boughtIn)})`,
+      }),
+      stat('Chips won', formatChips(money.earned), {
+        sub: `in ${plural(money.won, 'winning game')} (${percent(money.won, money.games)})`,
+      }),
+      stat('Chips lost', formatChips(money.lost), {
+        sub: `in ${plural(money.lostGames, 'losing game')} (${percent(money.lostGames, money.games)})`,
+      }),
       stat('Biggest hand win', formatChips(money.biggestWin)),
-      stat('Real-chip games', formatChips(money.games), { sub: `${percent(money.handsWon, money.hands)} · ${hands(money)}` }),
+      stat('Real-chip games', formatChips(money.games), {
+        sub: `${formatChips(money.won)} won (${percent(money.won, money.games)}) · ${handsWon(money)}`,
+      }),
       stat('Best game', money.bestGame === null ? '–' : formatSigned(money.bestGame), { className: tone(money.bestGame) }),
       stat('Chips added', formatChips(stats.deposited), { sub: 'welcome bonus and packs' }),
-      stat('Practice games', formatChips(stats.bot.games), { sub: hands(stats.bot) }),
+      stat('Practice games', formatChips(stats.bot.games), { sub: handsWon(stats.bot) }),
     );
     $('profile-stats').setAttribute('aria-busy', 'false');
 
@@ -964,10 +983,13 @@ import { Table3D } from './table3d.js';
       tr.append(
         name,
         cell(practice ? 'Practice' : 'Real chips', 'wide-only'),
-        cell(`${g.handsWon}/${g.hands}`, 'num'),
+        cell(`${g.handsWon}/${g.hands} (${percent(g.handsWon, g.hands)})`, 'num'),
         cell(formatChips(g.buyIn), 'num wide-only'),
         // practice results are shown, but never reached the bank
-        cell(practice ? `${formatSigned(g.net)} (free)` : formatSigned(g.net), `num ${practice ? '' : tone(g.net)}`),
+        cell(
+          practice ? `${formatSigned(g.net)} (free)` : `${formatSigned(g.net)} (${signedPercent(g.net, g.buyIn)})`,
+          `num ${practice ? '' : tone(g.net)}`,
+        ),
         cell(formatWhen(g.endedAt)),
       );
       return tr;
@@ -1023,10 +1045,13 @@ import { Table3D } from './table3d.js';
     $('game-when').textContent = `${formatWhen(game.startedAt)} – ${formatWhen(game.endedAt)} · ${duration(game.endedAt - game.startedAt)}`;
     const rebuys = game.rebuys ? `incl. ${game.rebuys} rebuy${game.rebuys === 1 ? '' : 's'}` : 'no rebuys';
     $('game-stats').replaceChildren(
-      stat('Result', practice ? `${formatSigned(game.net)} (free)` : formatSigned(game.net), { className: practice ? '' : tone(game.net) }),
+      stat('Result', practice ? `${formatSigned(game.net)} (free)` : formatSigned(game.net), {
+        className: practice ? '' : tone(game.net),
+        sub: `on a ${formatChips(game.buyIn)} buy-in (${signedPercent(game.net, game.buyIn)})`,
+      }),
       stat('Bought in', formatChips(game.buyIn), { sub: rebuys }),
       stat('Cashed out', formatChips(game.cashOut)),
-      stat('Hands won', `${game.handsWon}/${game.hands}`, { sub: percent(game.handsWon, game.hands) }),
+      stat('Hands won', formatChips(game.handsWon), { sub: `of ${plural(game.hands, 'hand')} (${percent(game.handsWon, game.hands)})` }),
     );
     $('game-stats').setAttribute('aria-busy', 'false');
 
@@ -1035,10 +1060,10 @@ import { Table3D } from './table3d.js';
       if (p.you) tr.className = 'you';
       tr.append(
         cell(p.you ? `${p.username} (you)` : p.username),
-        cell(`${p.handsWon}/${p.hands}`, 'num'),
+        cell(`${p.handsWon}/${p.hands} (${percent(p.handsWon, p.hands)})`, 'num'),
         cell(formatChips(p.buyIn), 'num wide-only'),
         cell(formatChips(p.cashOut), 'num wide-only'),
-        cell(formatSigned(p.net), `num ${practice ? '' : tone(p.net)}`),
+        cell(`${formatSigned(p.net)} (${signedPercent(p.net, p.buyIn)})`, `num ${practice ? '' : tone(p.net)}`),
       );
       return tr;
     }));
