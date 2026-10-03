@@ -5,6 +5,8 @@ const { describeScore, explainWin } = require('./describe');
 
 const BETTING_STAGES = ['preflop', 'flop', 'turn', 'river'];
 const LOG_LIMIT = 30;
+// hands kept per player for their game history
+const HISTORY_LIMIT = 500;
 // 'normal' tables are humans only and play for bank chips; 'bot' tables are free practice
 const MODES = ['normal', 'bot'];
 
@@ -40,12 +42,17 @@ class Table {
     rankHands,
     deckFactory = shuffledDeck,
     onEvent = () => {},
+    createdAt = Date.now(),
   }) {
     if (typeof rankHands !== 'function') throw new Error('rankHands is required');
     if (!MODES.includes(mode)) throw new GameError('Unknown table type');
     this.id = id;
     this.name = name;
     this.mode = mode;
+    // ties together everyone's game records from this table, even if a later table reuses the id
+    this.sessionKey = `${id}:${createdAt}`;
+    // every account that sat down here, so a game record knows who else played this session
+    this.participants = new Set();
     this.smallBlind = smallBlind;
     this.bigBlind = bigBlind;
     this.startingChips = startingChips;
@@ -129,12 +136,15 @@ class Table {
       // for the player's game history
       joinedAt,
       totalBuyIn: chips,
+      rebuys: 0,
+      history: [], // one entry per hand dealt in, newest last
       handsPlayed: 0,
       handsWon: 0,
       biggestWin: 0,
     };
     this.addLog(`${name} sits down at seat ${seat + 1}`);
     if (!isBot && !this.hostId) this.hostId = id;
+    if (userId) this.participants.add(userId);
     return seat;
   }
 
@@ -241,6 +251,7 @@ class Table {
     const p = this.checkRebuy(id);
     p.chips = p.buyIn;
     p.totalBuyIn += p.buyIn;
+    p.rebuys += 1;
     this.addLog(`${p.name} rebuys for ${p.buyIn}`);
   }
 
@@ -570,6 +581,8 @@ class Table {
     // net chip change for everyone dealt in, so each player can see what they won or lost
     const deltas = {};
     const busted = [];
+    const pot = this.pot;
+    const winners = result.winners.map((w) => ({ name: w.name, amount: w.amount, hand: w.description || w.hand || null }));
     for (const p of this.players) {
       p.bet = 0;
       p.totalBet = 0;
@@ -580,6 +593,20 @@ class Table {
         p.handsPlayed += 1;
         if (deltas[p.id] > 0) p.handsWon += 1;
         p.biggestWin = Math.max(p.biggestWin, deltas[p.id]);
+        const shown = result.shown[p.id];
+        p.history.push({
+          hand: this.handNumber,
+          endedAt: Date.now(),
+          hole: p.hole,
+          board: [...this.board],
+          folded: p.folded,
+          shown: shown ? shown.description || shown.hand : null,
+          pot,
+          delta: deltas[p.id],
+          stack: p.chips,
+          winners,
+        });
+        if (p.history.length > HISTORY_LIMIT) p.history.shift();
       }
       if (p.chips === 0 && !p.leaving) {
         busted.push({ id: p.id, name: p.name });

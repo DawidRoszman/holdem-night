@@ -417,6 +417,7 @@ test('each player keeps hands played, hands won, biggest win and total buy-in', 
   assert.deepEqual([b.handsPlayed, b.handsWon, b.biggestWin], [1, 0, 0]);
   table.rebuy('b');
   assert.equal(b.totalBuyIn, 2000);
+  assert.equal(b.rebuys, 1);
 });
 
 test('a hand cancelled by the evaluator does not count towards the stats', async () => {
@@ -483,4 +484,26 @@ test('a seat can move to a new connection id, keeping hand, host and result', as
   assert.equal(lastResult.deltas.a3, 1000);
   assert.ok(lastResult.shown.a3);
   assert.equal(table.rebind('nobody', 'x'), null);
+});
+
+test('each player keeps a hand-by-hand history for their game record', async () => {
+  const table = makeTable(['a', 'b'], { scores: { a: 2, b: 1 } });
+  assert.match(table.sessionKey, /^t1:\d+$/);
+  await table.startHand();
+  await table.act(actor(table), 'fold'); // heads-up: a is on the button and folds the small blind
+  await table.startHand();
+  await table.act(actor(table), 'allin');
+  await table.act(actor(table), 'call');
+  const [first, second] = table.findPlayer('a').history;
+  assert.equal(first.hand, 1);
+  assert.equal(first.folded, true);
+  assert.equal(first.delta, -10);
+  assert.equal(first.pot, 30);
+  assert.deepEqual(first.winners, [{ name: 'B', amount: 30, hand: null }]);
+  assert.equal(second.hole.length, 2);
+  assert.equal(second.board.length, 5);
+  assert.equal(second.delta, 990);
+  assert.equal(second.stack, 1980);
+  assert.ok(second.shown);
+  assert.equal(table.findPlayer('b').history[1].delta, -990);
 });

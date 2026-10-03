@@ -485,10 +485,14 @@ test('leaving a normal table pays the stack back together with the game record',
   await until(() => bank.games.length === 2);
 
   const games = Object.fromEntries(bank.games);
-  assert.deepEqual(games.bob, {
-    mode: 'normal', tableName: 'Duel', buyIn: 500, cashOut: 510, hands: 1, handsWon: 1, biggestWin: 10,
-    startedAt: games.bob.startedAt,
+  const { handLog, startedAt, tableKey, participants, ...bob } = games.bob;
+  assert.deepEqual(participants, ['ann', 'bob'], 'everyone who sat at this table session');
+  assert.deepEqual(bob, {
+    mode: 'normal', tableName: 'Duel', buyIn: 500, rebuys: 0, cashOut: 510, hands: 1, handsWon: 1, biggestWin: 10,
   });
+  assert.equal(tableKey, games.ann.tableKey, 'both records point at the same table session');
+  assert.deepEqual(handLog.map((h) => [h.hand, h.delta, h.stack]), [[1, 10, 510]]);
+  assert.ok(startedAt > 0);
   assert.deepEqual([games.ann.cashOut, games.ann.handsWon, games.ann.biggestWin], [490, 0, 0]);
   assert.equal(bank.balances.get('bob'), 1010);
   lobby.shutdown();

@@ -228,12 +228,16 @@ class Lobby {
     const game = {
       mode: table.mode,
       tableName: table.name,
+      tableKey: table.sessionKey,
+      participants: [...table.participants],
       buyIn: player.totalBuyIn,
+      rebuys: player.rebuys,
       cashOut: stake,
       hands: player.handsPlayed,
       handsWon: player.handsWon,
       biggestWin: player.biggestWin,
       startedAt: player.joinedAt,
+      handLog: player.history,
     };
     return this.bankJob(player.userId, this.accounts.settle(player.userId, amount, note, game), `settle a game (${note})`);
   }
