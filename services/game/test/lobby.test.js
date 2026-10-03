@@ -640,3 +640,32 @@ test('guests and players who leave on purpose do not keep their seat', async () 
   assert.equal(guests.lobby.tables.size, 0, 'guests have no account to come back as');
   guests.lobby.shutdown();
 });
+
+test('a reload whose new page connects before the old one closes still gets the seat back', async () => {
+  const bank = fakeBank({ ann: 1000 });
+  const { lobby, last } = setup({ accounts: bank });
+  await connectUser(lobby, 'c1', 'ann');
+  await lobby.handle('c1', { type: 'createTable', name: 'Racy', mode: 'bot' });
+  // the new page says hello while the old one is still seated
+  await connectUser(lobby, 'c2', 'ann');
+  assert.equal(last('c2', 'state'), undefined);
+  await lobby.disconnect('c1');
+  await until(() => last('c2', 'state'));
+  assert.equal(last('c2', 'state').table.name, 'Racy');
+  assert.equal(last('c2', 'state').table.you.seat, 0);
+  assert.match(last('c2', 'notice').message, /still seated at Racy/);
+  lobby.shutdown();
+});
+
+test('a seat is never handed to a connection that has already closed', async () => {
+  const bank = fakeBank({ ann: 1000 });
+  const { lobby } = setup({ accounts: bank, reconnectGraceMs: 40 });
+  await connectUser(lobby, 'c1', 'ann');
+  await lobby.handle('c1', { type: 'createTable', name: 'Gone', mode: 'bot' });
+  await connectUser(lobby, 'c2', 'ann');
+  // the browser closes: both pages go at once
+  await Promise.all([lobby.disconnect('c1'), lobby.disconnect('c2')]);
+  await until(() => lobby.tables.size === 0);
+  assert.equal(lobby.clients.size, 0);
+  lobby.shutdown();
+});

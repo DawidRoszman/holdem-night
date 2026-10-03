@@ -66,10 +66,22 @@ class Lobby {
     const client = this.clients.get(clientId);
     if (!client) return Promise.resolve();
     client.inbox = client.inbox.then(async () => {
-      if (client.tableId && !this.holdSeat(client)) await this.leaveTable(client);
+      if (client.tableId) {
+        if (!this.holdSeat(client)) await this.leaveTable(client);
+        // a reload's new page may have said hello before this old one closed: give it the seat now
+        else this.passSeat(client);
+      }
       this.clients.delete(clientId);
     });
     return client.inbox;
+  }
+
+  // Hands a just-held seat to another open connection of the same account that's in the lobby.
+  passSeat(client) {
+    const other = [...this.clients.values()].find(
+      (c) => c.id !== client.id && c.userId === client.userId && c.name && !c.tableId,
+    );
+    if (other) other.inbox = other.inbox.then(() => this.reclaimSeat(other));
   }
 
   // Marks a dropped player's seat as away and releases it after the grace period. Returns false
@@ -99,18 +111,20 @@ class Lobby {
     for (const entry of this.tables.values()) {
       const p = entry.table.players.find((o) => o.userId === client.userId && o.away);
       if (!p) continue;
-      clearTimeout(entry.away.get(p.userId));
-      entry.away.delete(p.userId);
       // between table operations, so a showdown in progress never sees the id change;
       // the seat may have been released just before
       let back = false;
       await this.enqueue(entry, () => {
-        if (!p.away || !entry.table.rebind(p.id, client.id)) return;
+        // the new connection may itself have closed by now: then the seat stays held for the next one
+        if (!p.away || !this.clients.has(client.id) || !entry.table.rebind(p.id, client.id)) return;
+        // only now is the seat taken: until then its release timer keeps running
+        clearTimeout(entry.away.get(p.userId));
+        entry.away.delete(p.userId);
         p.away = false;
         back = true;
         entry.table.addLog(`${p.name} is back`);
       });
-      if (!back || !this.clients.has(client.id)) return;
+      if (!back) return;
       client.tableId = entry.table.id;
       this.send(client.id, { type: 'notice', message: `Welcome back: you're still seated at ${entry.table.name}` });
       this.afterChange(entry);
