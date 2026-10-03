@@ -50,16 +50,25 @@ env:
       - assertVisible: "Rebuy 1000 chips"
       - tapOn:
           id: "rebuy-button"
-      - extendedWaitUntil:
-          visible: ".*All-in Alex rebuys for 1000.*"
+      # the hand log is below the table; after a few hands the line is out of sight
+      - scrollUntilVisible:
+          element: ".*All-in Alex rebuys for 1000.*"
+          direction: DOWN
           timeout: 5000
       - assertNotVisible: "You.re out of chips"
+      # centred, which scrolls to the top of the page: a button left under the sticky
+      # header still counts as visible, but a tap on it would land on Log out
+      - scrollUntilVisible:
+          element: "Leave table"
+          direction: UP
+          centerElement: true
 # --- the bot busted: we are told we won the table
 - runFlow:
     when:
       visible: "You won the table!"
     commands:
-      - assertVisible: "Ada \\(bot\\) is out of chips.*"
+      # in the result banner, after why the last hand was won
+      - assertVisible: ".*Ada \\(bot\\) is out of chips.*"
       - assertVisible: "\\+1000"
 - tapOn: "Leave table"
 - assertVisible: "Welcome, ${PLAYER_NAME}"

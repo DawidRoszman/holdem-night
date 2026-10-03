@@ -50,5 +50,11 @@ env:
     element:
       id: "pot"
     direction: UP
+    centerElement: true
 - runFlow: common/play_hand.yaml
+# back to the top of the page, clear of the sticky header (see 07_bust_or_win)
+- scrollUntilVisible:
+    element: "Leave table"
+    direction: UP
+    centerElement: true
 - tapOn: "Leave table"
