@@ -3,6 +3,8 @@
 #
 #   ./e2e/run.sh            build + start the stack, run all flows, stop the stack
 #   KEEP_UP=1 ./e2e/run.sh  leave the stack running afterwards
+#   HEADED=1 ./e2e/run.sh   show the browser instead of running it headless
+#   SCREEN_SIZE=1920x1080 ./e2e/run.sh   headless window size (default 1680x1240)
 #   ./e2e/run.sh flows/03_fold.yaml   run a single flow
 set -euo pipefail
 
@@ -36,6 +38,10 @@ REMOTE_PID=$!
 TARGETS=("$@")
 [[ ${#TARGETS[@]} -eq 0 ]] && TARGETS=(flows)
 
-echo "==> running maestro"
-"$MAESTRO" test -e APP_URL="$APP_URL" \
+# headless defaults to 1024x625, too small for the flows: use the size of a desktop browser window
+HEADLESS=(--headless --screen-size "${SCREEN_SIZE:-1680x1240}")
+[[ -n "${HEADED:-}" ]] && HEADLESS=()
+
+echo "==> running maestro${HEADED:+ (headed)}"
+"$MAESTRO" test "${HEADLESS[@]}" -e APP_URL="$APP_URL" \
   --format junit --output report.xml "${TARGETS[@]}"

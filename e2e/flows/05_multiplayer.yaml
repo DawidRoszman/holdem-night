@@ -27,3 +27,33 @@ env:
 - assertVisible: "Welcome, ${PLAYER_NAME}"
 # the remote player's table is still open in the lobby
 - assertVisible: "Remote Table"
+# the game in detail: newest first in the profile's history
+- tapOn:
+    id: "profile-button"
+- extendedWaitUntil:
+    visible: "Playing since .*"
+    timeout: 10000
+- scrollUntilVisible:
+    element: "Remote Table"
+    direction: DOWN
+- tapOn: "Remote Table"
+- extendedWaitUntil:
+    visible: "Players at this table"
+    timeout: 10000
+- assertVisible: "${PLAYER_NAME} \\(you\\)"
+- assertVisible: "Settle up"
+# Rita is still at her table, so her result isn't known yet
+- assertVisible: "Nothing to settle yet: Remote Rita is still at the table."
+- scrollUntilVisible:
+    element: "Hands"
+    direction: DOWN
+- assertVisible: ".*(You folded|You showed|won \\d+).*"
+- scrollUntilVisible:
+    element:
+      id: "game-back"
+    direction: UP
+- tapOn:
+    id: "game-back"
+- extendedWaitUntil:
+    visible: "Playing since .*"
+    timeout: 10000

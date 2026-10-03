@@ -56,14 +56,15 @@ At showdown the game service calls the evaluator, retrying once. If the evaluato
 |---|---|
 | `POST /register {username, password}` | new account with the welcome chips (1,000); returns `{token, user}` |
 | `POST /login {username, password}` | returns `{token, user}`; 5 failed attempts lock the name for 5 minutes |
-| `POST /logout`, `GET /me`, `GET /history`, `GET /profile` | `Authorization: Bearer <token>` |
+| `POST /logout`, `GET /me`, `GET /history`, `GET /profile`, `GET /games/:id` | `Authorization: Bearer <token>` |
 | `POST /buy {amount}` | buys a play-money pack of 500, 1,000 or 5,000 chips (free, no payment step) |
 
 - **Passwords** are salted `scrypt` hashes. Session tokens are random and stored only as SHA-256 hashes; they expire after 7 days.
 - **Internal API**: `POST /internal/session`, `/internal/debit`, `/internal/credit` and `/internal/game` are for the game service only. They need the shared `X-Internal-Key` (`ACCOUNTS_INTERNAL_KEY`), and the gateway answers 404 for them.
 - **Buying in**: sitting down at a table takes the buy-in (200 to 5,000, default 1,000) out of your bank, and it becomes your stack. A rebuy costs the same amount again.
 - **Cashing out**: leaving the table or logging out pays your stack back to the bank (after the hand, if you leave mid-hand). Closing the tab or losing the connection does the same once the seat stops being held (see *Reconnecting* below). If the game service is stopped, it cancels any hand in progress and pays every player's stack and current bets back before exiting.
-- **Game records**: when a player leaves a table, the game service sends one `POST /internal/game {userId, amount, note, game}`. The accounts service pays `amount` back (always 0 for practice games) and stores the game (table, type, total buy-in including rebuys, cash-out, hands played and won, biggest single-hand win) in the same database transaction. A sitting where no hand was dealt is paid back but not recorded.
+- **Game records**: when a player leaves a table, the game service sends one `POST /internal/game {userId, amount, note, game}`. The accounts service pays `amount` back (always 0 for practice games) and stores the game in the same database transaction: table, type, table-session key, total buy-in and number of rebuys, cash-out, hands played and won, biggest single-hand win, and a hand log (up to the last 500 hands: your cards, the board, whether you folded, what you showed, the pot, winners and your chips won or lost). A sitting where no hand was dealt is paid back but not recorded. Internal requests may be up to 1 MB because of the hand log; public ones stay at 8 KB.
+- **Game details** (`GET /games/:id`): the game with its hand log, every player's totals at that table session (summed over each time they sat down), and for real-chip games a `settlement`: the transfers, in chips, that square everyone up (the biggest loser pays the biggest winner first, so at most one transfer fewer than there are players). It also gives `pending`, the players who sat at that table but are still seated (so their result isn't recorded yet), and `unbalanced`, any chips the recorded results don't account for. Only a player from that game can read it. Databases from before this feature are upgraded in place; their older games have no hand log or table session.
 - **One table per account**: the same account can't sit at two tables at once, e.g. from two tabs.
 - **Not covered**: if the game service crashes outright (rather than being stopped), chips on the table at that moment are lost.
 - **Guest mode**: without `ACCOUNTS_URL`, the game service falls back to the old behaviour (pick a name, free chips). The unit tests use it.
@@ -89,6 +90,8 @@ Create an account (or log in), buy chips in the lobby if you need more, and pick
 - **Bank**: your balance is always in the header; the lobby has the chip shop and the buy-in field.
 - **Table type**: the lobby's *Real chips* / *Practice vs bots* picker sets the type of the table you create. Each table in the list is labelled with its type; practice tables show *Practice · no chips at stake*, and only they have **Add bot**.
 - **Profile**: click your initial or name in the header (from the lobby). It shows money stats from real-chip games (net result, chips won and lost, biggest hand win, best game, hands won), chips added to the bank and practice totals. Below that: a step chart of the bank balance after every change, a bar chart of each real-chip game's result (won in blue, lost in rust, a pair checked for colour-blind separation), the game history and the chips added (welcome bonus and packs). The charts use [TanStack Charts](https://tanstack.com/charts/latest) through its framework-free DOM host (`services/web/src/profile-charts.js`). The bundle loads only when the profile opens.
+- **Game details**: click a table name in the profile's game history. The page shows the game's result, buy-in (with rebuys), cash-out and hands won; every player at that table and their totals; a chart of your running result hand by hand; and every hand with your cards, the board and who won with what.
+- **Settle up** (real-chip games): enter what the chips are worth (e.g. *100 chips = 1.00 PLN*) and the page lists who pays whom. The rate is remembered in this browser. Hold'em Night never handles money: it only does the maths, and players pay each other however they like. Until everyone has left the table, the page names who is still seated and says there's nothing to settle yet.
 
 ### Web client
 
@@ -116,6 +119,7 @@ Requires Maestro ≥ 2.x, Google Chrome, Docker and Node ≥ 22.
 ./e2e/run.sh                        # builds + starts the stack, runs every flow, tears down
 ./e2e/run.sh flows/03_fold.yaml     # a single flow
 KEEP_UP=1 ./e2e/run.sh              # leave the stack running afterwards
+HEADED=1 ./e2e/run.sh               # show the browser (flows run headless by default)
 ```
 
 Flows sign in through `common/login.yaml`, which creates each test account on the first run, logs into it after that, and buys a 1,000 pack so repeated runs never empty the bank. `run.sh` also starts `e2e/remote-player.js`. It is a second, scripted player (it signs in through the accounts API) that connects over the public WebSocket endpoint and opens "Remote Table", then starts the game when someone joins, so the multiplayer flow plays against another real client. A JUnit report is written to `e2e/report.xml`.
@@ -126,7 +130,7 @@ Flows sign in through `common/login.yaml`, which creates each test account on th
 | `02_play_vs_bots` | nothing is dealt until the host presses Start game, the timing rules are shown, full hand to showdown vs. two bots, next hand auto-deals |
 | `03_fold` | turn countdown, blinds, fold, uncontested pot |
 | `04_raise_validation` | server rejects an under-minimum raise; a legal raise is called |
-| `05_multiplayer` | join another player's table from the lobby and play a hand over WebSockets |
+| `05_multiplayer` | join another player's table from the lobby and play a hand over WebSockets, then open that game from the profile: players, settle up, hand log |
 | `06_hand_rankings` | hand rankings cheat-sheet modal opens and closes mid-hand |
 | `07_bust_or_win` | all-in until someone busts: rebuy dialog, or "You won the table!" |
 | `08_session` | login survives a reload; a reload at a table goes straight back to the held seat; log out returns to the login screen |

@@ -64,7 +64,9 @@ env:
 - assertVisible: "Chips added"
 - assertVisible: "0 of 1 hands won"
 # the practice game is in the history, but no real-chip game was played
-- assertVisible: "Practice Pit"
+- scrollUntilVisible:
+    element: "Practice Pit"
+    direction: DOWN
 - assertVisible: "No real-chip games yet.*"
 # the deposits list is at the bottom of the page
 - scrollUntilVisible:
@@ -73,10 +75,7 @@ env:
 - assertVisible:
     id: "deposits-total"
     text: "1,000"
-- scrollUntilVisible:
-    element:
-      id: "profile-back"
-    direction: UP
+# the logo in the header goes home: the lobby
 - tapOn:
-    id: "profile-back"
+    id: "home-link"
 - assertVisible: "Open tables"
