@@ -1,0 +1,52 @@
+name: holdem
+
+services:
+  evaluator:
+    build: ./services/evaluator
+    environment:
+      PORT: 4001
+    restart: unless-stopped
+
+  accounts:
+    build: ./services/accounts
+    environment:
+      PORT: 4002
+      DB_PATH: /data/accounts.db
+      INTERNAL_KEY: ${ACCOUNTS_INTERNAL_KEY:-change-me-internal-key}
+      WELCOME_CHIPS: ${WELCOME_CHIPS:-1000}
+    volumes:
+      - accounts-data:/data
+    restart: unless-stopped
+
+  game:
+    build: ./services/game
+    environment:
+      PORT: 4000
+      EVALUATOR_URL: http://evaluator:4001
+      ACCOUNTS_URL: http://accounts:4002
+      ACCOUNTS_INTERNAL_KEY: ${ACCOUNTS_INTERNAL_KEY:-change-me-internal-key}
+      BOT_DELAY_MS: ${BOT_DELAY_MS:-700}
+      NEXT_HAND_DELAY_MS: ${NEXT_HAND_DELAY_MS:-5000}
+      TURN_TIMEOUT_MS: ${TURN_TIMEOUT_MS:-30000}
+    # gives the game time to pay table chips back to the bank on shutdown
+    stop_grace_period: 15s
+    depends_on:
+      evaluator:
+        condition: service_healthy
+      accounts:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build: ./services/web
+    ports:
+      - "${WEB_PORT:-8090}:8080"
+    depends_on:
+      game:
+        condition: service_healthy
+      accounts:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  accounts-data:
