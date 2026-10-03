@@ -83,6 +83,14 @@ class Store {
       );
       CREATE INDEX IF NOT EXISTS games_user ON games(user_id, id);
     `);
+    // columns added after the first release: upgrade databases created before them
+    const columns = new Set(this.db.prepare('PRAGMA table_info(games)').all().map((c) => c.name));
+    for (const [name, type] of [
+      ['table_key', 'TEXT'], ['rebuys', 'INTEGER NOT NULL DEFAULT 0'], ['hand_log', 'TEXT'], ['participants', 'TEXT'],
+    ]) {
+      if (!columns.has(name)) this.db.exec(`ALTER TABLE games ADD COLUMN ${name} ${type}`);
+    }
+    this.db.exec('CREATE INDEX IF NOT EXISTS games_table ON games(table_key)');
     this.sql = {
       insertUser: this.db.prepare('INSERT INTO users (username, password_hash, chips, created_at) VALUES (?, ?, 0, ?)'),
       userByName: this.db.prepare('SELECT * FROM users WHERE username = ?'),
@@ -103,8 +111,23 @@ class Store {
         'SELECT kind, amount, balance, note, created_at AS createdAt FROM transactions WHERE user_id = ? ORDER BY id DESC LIMIT ?',
       ),
       insertGame: this.db.prepare(`
-        INSERT INTO games (user_id, mode, table_name, buy_in, cash_out, hands, hands_won, biggest_win, started_at, ended_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+        INSERT INTO games (user_id, mode, table_name, table_key, buy_in, rebuys, cash_out, hands, hands_won, biggest_win,
+                           started_at, ended_at, hand_log, participants)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+      // who sat at a table session, as each record saw it, and who has been recorded
+      sessionRecords: this.db.prepare('SELECT user_id AS userId, participants FROM games WHERE table_key = ?'),
+      usernames: this.db.prepare("SELECT id, username FROM users WHERE id IN (SELECT value FROM json_each(?))"),
+      gameById: this.db.prepare(`
+        SELECT id, mode, table_name AS tableName, table_key AS tableKey, buy_in AS buyIn, rebuys, cash_out AS cashOut,
+               cash_out - buy_in AS net, hands, hands_won AS handsWon, biggest_win AS biggestWin,
+               started_at AS startedAt, ended_at AS endedAt, hand_log AS handLog
+        FROM games WHERE id = ? AND user_id = ?`),
+      // everyone's totals from one table session (a player may have sat down more than once)
+      tablePlayers: this.db.prepare(`
+        SELECT u.username, SUM(g.buy_in) AS buyIn, SUM(g.cash_out) AS cashOut, SUM(g.cash_out - g.buy_in) AS net,
+               SUM(g.hands) AS hands, SUM(g.hands_won) AS handsWon, MAX(g.ended_at) AS leftAt, g.user_id = ? AS you
+        FROM games g JOIN users u ON u.id = g.user_id
+        WHERE g.table_key = ? GROUP BY g.user_id ORDER BY net DESC, u.username`),
       games: this.db.prepare(`
         SELECT id, mode, table_name AS tableName, buy_in AS buyIn, cash_out AS cashOut, cash_out - buy_in AS net,
                hands, hands_won AS handsWon, biggest_win AS biggestWin, started_at AS startedAt, ended_at AS endedAt
@@ -221,12 +244,47 @@ class Store {
       // sitting down and leaving before a hand was dealt is not a game
       if (game.hands > 0) {
         this.sql.insertGame.run(
-          userId, game.mode, game.tableName, game.buyIn, game.cashOut,
-          game.hands, game.handsWon, game.biggestWin, game.startedAt, this.now(),
+          userId, game.mode, game.tableName, game.tableKey ?? null, game.buyIn, game.rebuys ?? 0, game.cashOut,
+          game.hands, game.handsWon, game.biggestWin, game.startedAt, this.now(), JSON.stringify(game.handLog ?? []),
+          JSON.stringify(game.participants ?? []),
         );
       }
       return chips;
     });
+  }
+
+  /**
+   * One game in detail: the record with its hand log, everyone's totals at that
+   * table session, and for real-chip games who pays whom to settle up (in chips).
+   * Only a player who sat in the game can see it.
+   */
+  gameDetail(userId, gameId) {
+    const row = this.sql.gameById.get(gameId, userId);
+    if (!row) throw new AccountError(404, 'No such game');
+    const { handLog, tableKey, ...game } = row;
+    game.handLog = handLog ? JSON.parse(handLog) : [];
+    const players = tableKey
+      ? this.sql.tablePlayers.all(userId, tableKey).map((p) => ({ ...p, you: Boolean(p.you) }))
+      : [{ username: this.user(userId).username, buyIn: game.buyIn, cashOut: game.cashOut, net: game.net,
+        hands: game.hands, handsWon: game.handsWon, leftAt: game.endedAt, you: true }];
+    const settlement = game.mode === 'normal'
+      ? {
+        transfers: settleUp(players),
+        unbalanced: players.reduce((sum, p) => sum + p.net, 0),
+        pending: tableKey ? this.stillPlaying(tableKey) : [],
+      }
+      : null;
+    return { game, players, settlement };
+  }
+
+  // Players who sat at a table session but whose game isn't recorded yet: they're still at the table.
+  stillPlaying(tableKey) {
+    const records = this.sql.sessionRecords.all(tableKey);
+    const recorded = new Set(records.map((r) => r.userId));
+    const seen = new Set(records.flatMap((r) => JSON.parse(r.participants || '[]')));
+    const missing = [...seen].filter((id) => !recorded.has(id));
+    if (!missing.length) return [];
+    return this.sql.usernames.all(JSON.stringify(missing)).map((u) => u.username).sort();
   }
 
   games(userId, limit = 50) {
@@ -257,4 +315,29 @@ class Store {
   }
 }
 
-module.exports = { Store, AccountError, hashPassword, verifyPassword };
+/**
+ * Who pays whom so every loser pays and every winner is paid, in at most
+ * n - 1 transfers: the biggest loser pays the biggest winner, and so on.
+ * `players` are [{ username, net }]; amounts are in chips. If the results
+ * don't sum to zero (someone is still playing), the excess stays unsettled.
+ */
+function settleUp(players) {
+  const queue = (sign) => players
+    .filter((p) => Math.sign(p.net) === sign)
+    .map((p) => ({ name: p.username, left: Math.abs(p.net) }))
+    .sort((a, b) => b.left - a.left || a.name.localeCompare(b.name));
+  const losers = queue(-1);
+  const winners = queue(1);
+  const transfers = [];
+  for (let i = 0, j = 0; i < losers.length && j < winners.length;) {
+    const amount = Math.min(losers[i].left, winners[j].left);
+    transfers.push({ from: losers[i].name, to: winners[j].name, amount });
+    losers[i].left -= amount;
+    winners[j].left -= amount;
+    if (losers[i].left === 0) i += 1;
+    if (winners[j].left === 0) j += 1;
+  }
+  return transfers;
+}
+
+module.exports = { Store, AccountError, hashPassword, verifyPassword, settleUp };

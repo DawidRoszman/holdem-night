@@ -2,7 +2,11 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { Store, AccountError, hashPassword, verifyPassword } = require('../src/store');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { DatabaseSync } = require('node:sqlite');
+const { Store, AccountError, hashPassword, verifyPassword, settleUp } = require('../src/store');
 
 test('passwords are salted scrypt hashes that verify', async () => {
   const a = await hashPassword('hunter22');
@@ -137,4 +141,97 @@ test('a new player has an empty profile', async () => {
     games: 0, hands: 0, handsWon: 0, earned: 0, lost: 0, net: 0, biggestWin: 0, bestGame: null, worstGame: null,
   });
   assert.deepEqual([games, timeline], [[], []]);
+});
+
+test('settling up pays every winner from the losers in as few transfers as needed', () => {
+  const nets = (o) => Object.entries(o).map(([username, net]) => ({ username, net }));
+  assert.deepEqual(settleUp(nets({ ann: 600, bob: -400, cid: -200 })), [
+    { from: 'bob', to: 'ann', amount: 400 },
+    { from: 'cid', to: 'ann', amount: 200 },
+  ]);
+  assert.deepEqual(settleUp(nets({ ann: 300, bob: 200, cid: -500, dee: 0 })), [
+    { from: 'cid', to: 'ann', amount: 300 },
+    { from: 'cid', to: 'bob', amount: 200 },
+  ]);
+  // someone still playing: only what is known is settled
+  assert.deepEqual(settleUp(nets({ ann: 500, bob: -200 })), [{ from: 'bob', to: 'ann', amount: 200 }]);
+  assert.deepEqual(settleUp(nets({ ann: 0 })), []);
+});
+
+test('a game in detail shows its hands, everyone at the table and how to settle up', async () => {
+  let clock = 0;
+  const store = new Store(':memory:', { welcomeChips: 1000, now: () => ++clock });
+  const ann = (await store.register('Ann', 'secret1')).id;
+  const bob = (await store.register('Bob', 'secret1')).id;
+  const cid = (await store.register('Cid', 'secret1')).id;
+  const hand = { hand: 1, endedAt: 5, hole: ['As', 'Kd'], board: [], folded: false, shown: null, pot: 30, delta: 10, stack: 1010, winners: [] };
+  store.settleGame(ann, 0, game({ tableKey: 'k1', cashOut: 1700, handLog: [hand] }));
+  store.settleGame(bob, 0, game({ tableKey: 'k1', cashOut: 500 }));
+  // Cid sat down twice at the same table
+  store.settleGame(cid, 0, game({ tableKey: 'k1', cashOut: 900 }));
+  store.settleGame(cid, 0, game({ tableKey: 'k1', buyIn: 500, cashOut: 400, rebuys: 1 }));
+  store.settleGame(cid, 0, game({ tableKey: 'other', cashOut: 5000 }));
+  const [annGame] = store.games(ann);
+
+  const { game: g, players, settlement } = store.gameDetail(ann, annGame.id);
+  assert.equal(g.net, 700);
+  assert.deepEqual(g.handLog, [hand]);
+  assert.deepEqual(players.map((p) => [p.username, p.net, p.you]), [['Ann', 700, true], ['Cid', -200, false], ['Bob', -500, false]]);
+  assert.deepEqual(settlement, {
+    transfers: [{ from: 'Bob', to: 'Ann', amount: 500 }, { from: 'Cid', to: 'Ann', amount: 200 }],
+    unbalanced: 0,
+    pending: [],
+  });
+  assert.equal(store.games(cid)[1].rebuys, undefined, 'the list stays small');
+  assert.equal(store.gameDetail(cid, store.games(cid)[1].id).game.rebuys, 1);
+
+  // other people's games stay private
+  assert.throws(() => store.gameDetail(bob, annGame.id), (err) => err.status === 404);
+});
+
+test('practice games have no settle-up, and old games without a table key list only you', async () => {
+  const store = new Store(':memory:', { welcomeChips: 1000 });
+  const { id } = await store.register('Ann', 'secret1');
+  store.settleGame(id, 0, game({ mode: 'bot', tableKey: 'p1', cashOut: 2000 }));
+  store.settleGame(id, 0, game({ cashOut: 1200 }));
+  const [old, practice] = store.games(id);
+  assert.equal(store.gameDetail(id, practice.id).settlement, null);
+  const detail = store.gameDetail(id, old.id);
+  assert.deepEqual(detail.players.map((p) => [p.username, p.net, p.you]), [['Ann', 200, true]]);
+  assert.deepEqual(detail.game.handLog, []);
+});
+
+test('a database from before game details is upgraded in place', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'holdem-accounts-'));
+  const file = path.join(dir, 'old.db');
+  const old = new DatabaseSync(file);
+  old.exec(`
+    CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, password_hash TEXT NOT NULL,
+                        chips INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
+    CREATE TABLE games (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, mode TEXT NOT NULL, table_name TEXT NOT NULL,
+                        buy_in INTEGER NOT NULL, cash_out INTEGER NOT NULL, hands INTEGER NOT NULL, hands_won INTEGER NOT NULL,
+                        biggest_win INTEGER NOT NULL, started_at INTEGER NOT NULL, ended_at INTEGER NOT NULL);
+    INSERT INTO users VALUES (1, 'Ann', 'x', 0, 1);
+    INSERT INTO games VALUES (1, 1, 'normal', 'Old Table', 1000, 1500, 4, 2, 300, 1, 2);
+  `);
+  old.close();
+  const store = new Store(file);
+  const { game: g, players } = store.gameDetail(1, 1);
+  assert.deepEqual([g.tableName, g.net, g.rebuys, g.handLog], ['Old Table', 500, 0, []]);
+  assert.equal(players.length, 1);
+  store.close();
+  fs.rmSync(dir, { recursive: true });
+});
+
+test('players still at the table are named, even when the recorded results add up to zero', async () => {
+  const store = new Store(':memory:', { welcomeChips: 1000 });
+  const bea = (await store.register('Bea', 'secret1')).id;
+  const rita = (await store.register('Rita', 'secret1')).id;
+  // Bea broke even and left; Rita is still seated
+  store.settleGame(bea, 0, game({ tableKey: 'k', cashOut: 1000, participants: [rita, bea] }));
+  const { settlement } = store.gameDetail(bea, store.games(bea)[0].id);
+  assert.deepEqual(settlement, { transfers: [], unbalanced: 0, pending: ['Rita'] });
+
+  store.settleGame(rita, 0, game({ tableKey: 'k', cashOut: 1000, participants: [rita, bea] }));
+  assert.deepEqual(store.gameDetail(bea, store.games(bea)[0].id).settlement.pending, []);
 });

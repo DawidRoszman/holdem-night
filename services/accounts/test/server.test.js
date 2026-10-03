@@ -132,6 +132,40 @@ test('the game service settles games and the player sees them on their profile',
   assert.equal(profile.body.stats.normal.earned, 250);
   assert.deepEqual(profile.body.games.map((g) => [g.tableName, g.net]), [['Table A', 250]]);
   assert.deepEqual(profile.body.timeline.map((p) => p.kind), ['welcome', 'buy-in', 'cash-out']);
+
+  // the game in detail: only its own player can read it
+  const gameId = profile.body.games[0].id;
+  const detail = await call('GET', `/games/${gameId}`, { token: body.token });
+  assert.equal(detail.status, 200);
+  assert.equal(detail.body.game.tableName, 'Table A');
+  assert.deepEqual(detail.body.players.map((p) => p.username), ['Ann']);
+  assert.equal((await call('GET', `/games/${gameId}`)).status, 401);
+  assert.equal((await call('GET', '/games/999', { token: body.token })).status, 404);
+  assert.equal((await call('GET', '/games/abc', { token: body.token })).status, 404);
+  const other = await call('POST', '/register', { body: { username: 'Bob', password: 'secret1' } });
+  assert.equal((await call('GET', `/games/${gameId}`, { token: other.body.token })).status, 404);
+});
+
+test('hand logs are validated, trimmed to known fields and may exceed the public body limit', async (t) => {
+  const { server, call } = await start();
+  t.after(() => server.close());
+  const { body } = await call('POST', '/register', { body: { username: 'Ann', password: 'secret1' } });
+  const { id: userId } = (await call('POST', '/internal/session', { key: KEY, body: { token: body.token } })).body;
+  const hand = (n) => ({ hand: n, endedAt: n, hole: ['As', 'Kd', 'extra'], board: ['2c'], folded: false, shown: 'Pair',
+    pot: 40, delta: -20, stack: 980, winners: [{ name: 'Bob', amount: 40, hand: 'Pair of Twos', evil: '<script>' }], junk: 1 });
+  const game = { mode: 'normal', tableName: 'Long', tableKey: 'k', buyIn: 1000, cashOut: 0, hands: 600, handsWon: 0,
+    biggestWin: 0, startedAt: 1, handLog: Array.from({ length: 600 }, (_, i) => hand(i + 1)) };
+  const res = await call('POST', '/internal/game', { key: KEY, body: { userId, amount: 0, game } });
+  assert.equal(res.status, 200, 'a 600-hand log is well over 8 KB');
+  const { games } = (await call('GET', '/profile', { token: body.token })).body;
+  const { handLog } = (await call('GET', `/games/${games[0].id}`, { token: body.token })).body.game;
+  assert.equal(handLog.length, 500, 'only the latest 500 hands are kept');
+  assert.equal(handLog[0].hand, 101);
+  assert.deepEqual(handLog[0].hole, ['As', 'Kd']);
+  assert.deepEqual(handLog[0].winners, [{ name: 'Bob', amount: 40, hand: 'Pair of Twos' }]);
+  assert.equal(handLog[0].junk, undefined);
+  const bad = await call('POST', '/internal/game', { key: KEY, body: { userId, amount: 0, game: { ...game, handLog: [null] } } });
+  assert.equal(bad.status, 400);
 });
 
 test('unknown routes and bad JSON are client errors', async (t) => {
