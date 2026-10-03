@@ -137,7 +137,7 @@ import { Table3D } from './table3d.js';
     ws.onclose = () => {
       setConnection('Disconnected – reconnecting…', 'bad');
       state.table = null;
-      if (state.token && state.screen !== 'profile') show('lobby');
+      if (state.token && !onAccountPage()) show('lobby');
       setTimeout(connect, state.reconnectDelay);
       state.reconnectDelay = Math.min(state.reconnectDelay * 2, 5000);
     };
@@ -165,7 +165,7 @@ import { Table3D } from './table3d.js';
         state.timing = msg.timing || null;
         renderLobbyTiming();
         setBank(msg.chips);
-        if (!state.table && state.screen !== 'profile') show('lobby');
+        if (!state.table && !onAccountPage()) show('lobby');
         break;
       case 'authError':
         expireSession(msg.message);
@@ -265,10 +265,15 @@ import { Table3D } from './table3d.js';
     else if (!state.table) show('lobby');
   }
 
+  // the profile and a game's details are pages of their own, kept across reconnects
+  const onAccountPage = () => state.screen === 'profile' || state.screen === 'game';
+
   function show(screen) {
-    if (state.screen === 'profile' && screen !== 'profile') closeProfile();
+    if (onAccountPage() && screen !== state.screen) closeProfile();
+    // a different screen starts at the top, not wherever the last one was scrolled to
+    if (screen !== state.screen) window.scrollTo(0, 0);
     state.screen = screen;
-    for (const s of ['login', 'lobby', 'table', 'profile']) $(`screen-${s}`).hidden = s !== screen;
+    for (const s of ['login', 'lobby', 'table', 'profile', 'game']) $(`screen-${s}`).hidden = s !== screen;
     $('profile-button').disabled = Boolean(state.table);
     $('home-link').title = state.table ? 'Leave the table to go back to the lobby' : 'Home';
   }
@@ -853,8 +858,10 @@ import { Table3D } from './table3d.js';
 
     // the chart reads left to right, oldest first; the history table lists newest first
     const moneyGames = games.filter((g) => g.mode === 'normal').reverse();
-    $('balance-empty').hidden = timeline.length > 0;
-    $('balance-chart').hidden = timeline.length === 0;
+    // a single balance (just the welcome bonus) is a point, not a history
+    const history = timeline.length > 1;
+    $('balance-empty').hidden = history;
+    $('balance-chart').hidden = !history;
     $('games-empty').hidden = moneyGames.length > 0;
     $('games-chart').hidden = moneyGames.length === 0;
     destroyCharts = charts.mountProfileCharts({
@@ -868,8 +875,17 @@ import { Table3D } from './table3d.js';
     $('history-body').replaceChildren(...games.map((g) => {
       const tr = document.createElement('tr');
       const practice = g.mode === 'bot';
+      const name = document.createElement('td');
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'game-link';
+      open.id = `game-${g.id}`;
+      open.textContent = g.tableName;
+      open.title = 'See this game in detail';
+      open.addEventListener('click', () => openGame(g.id));
+      name.append(open);
       tr.append(
-        cell(g.tableName),
+        name,
         cell(practice ? 'Practice' : 'Real chips', 'wide-only'),
         cell(`${g.handsWon}/${g.hands}`, 'num'),
         cell(formatChips(g.buyIn), 'num wide-only'),
@@ -890,6 +906,171 @@ import { Table3D } from './table3d.js';
         cell(formatWhen(d.createdAt)),
       );
       return tr;
+    }));
+  }
+
+  // ------------------------------------------------------------- one game
+
+  async function openGame(id) {
+    closeProfile();
+    show('game');
+    const request = profileRequest;
+    $('game-error').hidden = true;
+    $('game-stats').setAttribute('aria-busy', 'true');
+    let detail;
+    let charts;
+    try {
+      [detail, charts] = await Promise.all([api(`/games/${id}`, { method: 'GET' }), import('./profile-charts.js')]);
+    } catch (err) {
+      if (request !== profileRequest) return;
+      if (err.status === 401) return expireSession(err.message);
+      $('game-error').textContent = err.status ? err.message : 'Could not load this game, try again shortly';
+      $('game-error').hidden = false;
+      return;
+    }
+    if (request !== profileRequest) return;
+    renderGame(detail, charts);
+  }
+
+  const duration = (ms) => {
+    const minutes = Math.max(1, Math.round(ms / 60000));
+    return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+  };
+
+  function renderGame({ game, players, settlement }, charts) {
+    const practice = game.mode === 'bot';
+    $('game-name').textContent = game.tableName;
+    $('game-mode').textContent = practice ? 'Practice' : 'Real chips';
+    $('game-mode').className = `mode-badge${practice ? ' practice' : ''}`;
+    $('game-when').textContent = `${formatWhen(game.startedAt)} – ${formatWhen(game.endedAt)} · ${duration(game.endedAt - game.startedAt)}`;
+    const rebuys = game.rebuys ? `incl. ${game.rebuys} rebuy${game.rebuys === 1 ? '' : 's'}` : 'no rebuys';
+    $('game-stats').replaceChildren(
+      stat('Result', practice ? `${formatSigned(game.net)} (free)` : formatSigned(game.net), { className: practice ? '' : tone(game.net) }),
+      stat('Bought in', formatChips(game.buyIn), { sub: rebuys }),
+      stat('Cashed out', formatChips(game.cashOut)),
+      stat('Hands won', `${game.handsWon}/${game.hands}`, { sub: percent(game.handsWon, game.hands) }),
+    );
+    $('game-stats').setAttribute('aria-busy', 'false');
+
+    $('game-players').replaceChildren(...players.map((p) => {
+      const tr = document.createElement('tr');
+      if (p.you) tr.className = 'you';
+      tr.append(
+        cell(p.you ? `${p.username} (you)` : p.username),
+        cell(`${p.handsWon}/${p.hands}`, 'num'),
+        cell(formatChips(p.buyIn), 'num wide-only'),
+        cell(formatChips(p.cashOut), 'num wide-only'),
+        cell(formatSigned(p.net), `num ${practice ? '' : tone(p.net)}`),
+      );
+      return tr;
+    }));
+    // results are final once everyone who sat at the table has left it
+    const pending = settlement ? settlement.pending : [];
+    const unbalanced = settlement && settlement.unbalanced;
+    $('game-unbalanced').hidden = !pending.length && !unbalanced;
+    if (pending.length) {
+      $('game-unbalanced').textContent = `${stillSeated(pending)}, so their result isn't in yet.`;
+    } else if (unbalanced) {
+      $('game-unbalanced').textContent = `The results add up to ${formatSigned(unbalanced)} chips rather than zero, so only part of this table can be settled.`;
+    }
+
+    $('settle-panel').hidden = !settlement;
+    currentSettlement = settlement;
+    renderSettlement();
+
+    destroyCharts = charts.mountGameChart($('game-chart'), game.handLog);
+    $('game-chart').hidden = game.handLog.length === 0;
+    $('game-chart-empty').hidden = game.handLog.length > 0;
+    renderHands(game.handLog);
+  }
+
+  const stillSeated = (names) => `${names.join(' and ')} ${names.length === 1 ? 'is' : 'are'} still at the table`;
+
+  // "You showed Two Pair · Bob won 120 with a Flush"
+  function handOutcome(h) {
+    const you = (name) => (name === state.name ? 'You' : name);
+    const winners = h.winners.map((w) => `${you(w.name)} won ${formatChips(w.amount)}${w.hand ? ` with ${w.hand}` : ''}`);
+    // a winning hand is already named in the win
+    const won = h.winners.some((w) => w.name === state.name);
+    const mine = h.folded ? 'You folded' : h.shown && !won ? `You showed ${h.shown}` : null;
+    return [mine, ...winners].filter(Boolean).join(' · ') || '–';
+  }
+
+  function cardsCell(list) {
+    const td = document.createElement('td');
+    const wrap = document.createElement('span');
+    wrap.className = 'mini-cards';
+    wrap.append(...list.map(cardEl));
+    if (!list.length) wrap.textContent = '–';
+    td.append(wrap);
+    return td;
+  }
+
+  function renderHands(hands) {
+    $('game-hands-empty').hidden = hands.length > 0;
+    $('game-hands').replaceChildren(...[...hands].reverse().map((h) => {
+      const tr = document.createElement('tr');
+      tr.append(
+        cell(`${h.hand}`, 'num'),
+        cardsCell(h.hole),
+        cardsCell(h.board),
+        cell(handOutcome(h), 'outcome'),
+        cell(formatSigned(h.delta), `num ${tone(h.delta)}`),
+      );
+      return tr;
+    }));
+  }
+
+  // ------------------------------------------------------------- settle up
+
+  let currentSettlement = null;
+  const RATE_KEY = 'holdem.settleRate';
+  try {
+    const saved = JSON.parse(localStorage.getItem(RATE_KEY));
+    if (saved) {
+      $('settle-chips').value = saved.chips;
+      $('settle-value').value = saved.value;
+      $('settle-currency').value = saved.currency;
+    }
+  } catch { /* storage unavailable: keep the defaults */ }
+
+  const money = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  function renderSettlement() {
+    const list = $('settle-list');
+    if (!currentSettlement) return list.replaceChildren();
+    const chips = Number($('settle-chips').value);
+    const value = Number($('settle-value').value);
+    const currency = $('settle-currency').value.trim();
+    const valid = chips > 0 && value >= 0;
+    try {
+      localStorage.setItem(RATE_KEY, JSON.stringify({ chips: $('settle-chips').value, value: $('settle-value').value, currency }));
+    } catch { /* not saved, still works */ }
+    const item = (children) => {
+      const li = document.createElement('li');
+      li.append(...children);
+      return li;
+    };
+    const span = (text, className = '') => {
+      const el = document.createElement('span');
+      el.textContent = text;
+      if (className) el.className = className;
+      return el;
+    };
+    const { transfers, pending } = currentSettlement;
+    if (pending.length) {
+      return list.replaceChildren(item([span(`Nothing to settle yet: ${stillSeated(pending)}.`)]));
+    }
+    if (!transfers.length) return list.replaceChildren(item([span('Nobody owes anybody anything.')]));
+    const you = (name) => (name === state.name ? 'You' : name);
+    list.replaceChildren(...transfers.map((t) => {
+      const amount = valid ? `${money.format((t.amount * value) / chips)}${currency ? ` ${currency}` : ''}` : '–';
+      const from = you(t.from);
+      return item([
+        span(`${from} ${from === 'You' ? 'pay' : 'pays'} ${you(t.to) === 'You' ? 'you' : t.to}`, 'font-semibold'),
+        span(`${formatChips(t.amount)} chips`, 'text-sm text-muted-foreground'),
+        span(amount, 'amount'),
+      ]);
     }));
   }
 
@@ -975,6 +1156,9 @@ import { Table3D } from './table3d.js';
     goHome();
   });
   $('profile-back').addEventListener('click', () => show(state.table ? 'table' : 'lobby'));
+  $('game-back').addEventListener('click', openProfile);
+  $('settle-form').addEventListener('input', renderSettlement);
+  $('settle-form').addEventListener('submit', (e) => e.preventDefault());
 
   $('login-form').addEventListener('submit', async (e) => {
     e.preventDefault();

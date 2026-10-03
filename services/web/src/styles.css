@@ -307,6 +307,16 @@
   /* columns that can go on a phone */
   .history .wide-only { @apply hidden sm:table-cell; }
   .history .up { @apply font-bold; color: #1a5f96; }
+  /* the table name in the game history opens that game */
+  .game-link { @apply cursor-pointer text-left font-semibold underline decoration-foreground/40 underline-offset-4 hover:decoration-foreground; }
+  .history tr.you td { @apply bg-foreground/5; }
+  .hands td { @apply align-middle; }
+  .mini-cards { @apply flex gap-0.5; }
+  .mini-cards .card { @apply h-7 w-5 rounded-[3px] text-[11px] shadow-sm; }
+  .hands .outcome { @apply min-w-56 whitespace-normal text-xs; }
+  .settle-list { @apply space-y-2; }
+  .settle-list li { @apply flex flex-wrap items-baseline gap-x-2 rounded-lg border-2 border-foreground/20 px-4 py-2; }
+  .settle-list .amount { @apply ml-auto text-lg font-bold tabular-nums; }
   .history .down { @apply font-bold; color: #a8401c; }
 
   /* ---------------------------------------------------------- felt + seats */

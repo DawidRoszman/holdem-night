@@ -18,6 +18,7 @@ const signed = (n) => (n > 0 ? `+${chips(n)}` : n < 0 ? `−${chips(-n)}` : '0')
 // Each tick at its own precision (like d3's multi-scale format), in local 24-hour time.
 function tickLabel(date) {
   const clock = { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
+  if (date.getMilliseconds()) return '';
   if (date.getSeconds()) return date.toLocaleTimeString(undefined, { ...clock, second: '2-digit' });
   if (date.getHours() || date.getMinutes()) return date.toLocaleTimeString(undefined, clock);
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
@@ -107,13 +108,59 @@ function gamesDefinition(games) {
   });
 }
 
+// Running result of one game: chips won or lost since sitting down, after each hand.
+function gameDefinition(hands) {
+  let total = 0;
+  const rows = hands.map((h) => {
+    total += h.delta;
+    return { ...h, total };
+  });
+  return defineChart({
+    marks: [
+      ruleY([0], { stroke: 'currentColor', strokeOpacity: 0.6 }),
+      lineY(rows, { x: 'hand', y: 'total', stroke: WIN, strokeWidth: 2, points: rows.length <= 40 }),
+      crosshair({ x: true, y: false }),
+    ],
+    scales: {
+      x: {
+        scale: scaleLinear,
+        axis: { label: 'Hand', ticks: { spacing: 60, format: (n) => (Number.isInteger(n) ? `#${n}` : '') } },
+      },
+      y: {
+        scale: scaleLinear,
+        nice: true,
+        grid: true,
+        axis: { label: 'Chips won or lost', ticks: { format: signed } },
+      },
+    },
+    focus: 'nearest-x',
+    maxFocusDistance: Number.POSITIVE_INFINITY,
+    tooltip: {
+      use: tooltip,
+      className: 'chart-tooltip',
+      format: ({ datum: h }) => `Hand #${h.hand}\n${signed(h.delta)} this hand\n${signed(h.total)} so far`,
+    },
+  });
+}
+
+export function mountGameChart(el, hands) {
+  if (!hands.length) return () => {};
+  const host = mountChart(el, {
+    definition: gameDefinition(hands),
+    height: 240,
+    idPrefix: 'game-',
+    ariaLabel: 'Chips won or lost, hand by hand',
+  });
+  return () => host.destroy();
+}
+
 /**
  * Mounts both charts; returns a function that destroys them.
  * `games` are the player's money games, oldest first.
  */
 export function mountProfileCharts({ balanceEl, gamesEl, timeline, games }) {
   const hosts = [];
-  if (timeline.length) {
+  if (timeline.length > 1) {
     hosts.push(mountChart(balanceEl, {
       definition: balanceDefinition(timeline),
       height: 260,
