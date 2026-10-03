@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#1b241f">
   <title>Hold'em Night</title>
-  <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <header class="sticky top-0 z-20 border-b bg-background/80 backdrop-blur">
@@ -318,6 +318,16 @@
       <ol id="rankings-list" class="rankings"></ol>
     </dialog>
 
+    <!-- Navigating away from a table (back button, logo) -->
+    <dialog id="leave-dialog" class="modal max-w-md" aria-labelledby="leave-title">
+      <h2 id="leave-title" class="text-xl font-bold tracking-tight">Leave the table?</h2>
+      <p class="mt-2 text-sm text-muted-foreground">You'll fold any hand in play, and your stack goes back to your bank.</p>
+      <div class="mt-6 flex flex-wrap justify-end gap-2">
+        <button id="leave-stay" type="button" class="btn btn-secondary">Stay at the table</button>
+        <button id="leave-confirm" type="button" class="btn btn-primary">Leave table</button>
+      </div>
+    </dialog>
+
     <!-- Out of chips -->
     <dialog id="busted-dialog" class="modal max-w-md" aria-labelledby="busted-title">
       <div class="glyph text-destructive" aria-hidden="true">0</div>
@@ -335,6 +345,6 @@
     <div id="timer-announcer" class="sr-only" aria-live="assertive"></div>
   </main>
 
-  <script type="module" src="app.js"></script>
+  <script type="module" src="/app.js"></script>
 </body>
 </html>

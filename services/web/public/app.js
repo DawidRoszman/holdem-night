@@ -136,8 +136,9 @@ import { Table3D } from './table3d.js';
     ws.onmessage = (event) => handle(JSON.parse(event.data));
     ws.onclose = () => {
       setConnection('Disconnected – reconnecting…', 'bad');
+      // a held seat comes back after the reconnect; until then the page stays as it is
       state.table = null;
-      if (state.token && !onAccountPage()) show('lobby');
+      state.playerId = null;
       setTimeout(connect, state.reconnectDelay);
       state.reconnectDelay = Math.min(state.reconnectDelay * 2, 5000);
     };
@@ -165,7 +166,7 @@ import { Table3D } from './table3d.js';
         state.timing = msg.timing || null;
         renderLobbyTiming();
         setBank(msg.chips);
-        if (!state.table && !onAccountPage()) show('lobby');
+        route();
         break;
       case 'authError':
         expireSession(msg.message);
@@ -176,18 +177,31 @@ import { Table3D } from './table3d.js';
       case 'tables':
         renderTables(msg.tables);
         break;
-      case 'state':
+      case 'state': {
+        const first = !state.table;
         state.table = msg.table;
+        clearTimeout(seatTimer);
+        // sitting down (or getting a held seat back) moves to the table's address
+        const path = `/tables/${msg.table.id}`;
+        if (first && location.pathname !== path) {
+          history[location.pathname.startsWith('/tables/') ? 'replaceState' : 'pushState'](null, '', path);
+        }
         show('table');
         renderTable(msg.table);
         break;
-      case 'left':
+      }
+      case 'left': {
+        const tablePath = state.table && `/tables/${state.table.id}`;
         state.table = null;
         clocks.turnEnds = null;
         clocks.nextHand = null;
         closeBustedDialog();
-        show('lobby');
+        // left with the button: the lobby takes the table's place in the history;
+        // left by navigating away: the address already says where to go
+        if (location.pathname === tablePath) history.replaceState(null, '', '/');
+        route({ force: true });
         break;
+      }
       case 'error':
         toast(msg.message);
         break;
@@ -225,7 +239,8 @@ import { Table3D } from './table3d.js';
     if (state.ws && state.ws.readyState === WebSocket.OPEN) send({ type: 'hello', token });
   }
 
-  function signedOut() {
+  function signedOut({ keepPage = false } = {}) {
+    if (!keepPage) history.replaceState(null, '', '/');
     savedSession.clear();
     state.token = null;
     state.name = null;
@@ -249,7 +264,7 @@ import { Table3D } from './table3d.js';
   }
 
   function expireSession(message) {
-    signedOut();
+    signedOut({ keepPage: true });
     showAuthError(message || 'Please log in again');
   }
 
@@ -258,11 +273,72 @@ import { Table3D } from './table3d.js';
     $('auth-error').hidden = false;
   }
 
-  // Home is the lobby once logged in. A seated player stays at their table:
-  // getting to the lobby means leaving it, which would fold a hand in play.
-  function goHome() {
-    if (!state.token) show('login');
-    else if (!state.table) show('lobby');
+  // ------------------------------------------------------------- pages and addresses
+
+  // Each page has its own address, so back/forward move between pages and a
+  // refresh stays on the page: / (lobby, or login), /profile, /games/<id>, /tables/<id>.
+  function currentRoute() {
+    const path = location.pathname;
+    let m;
+    if (path === '/profile') return { screen: 'profile', path };
+    if ((m = /^\/games\/(\d+)$/.exec(path))) return { screen: 'game', id: Number(m[1]), path };
+    if ((m = /^\/tables\/([\w-]+)$/.exec(path))) return { screen: 'table', id: m[1], path };
+    return { screen: 'lobby', path: '/' };
+  }
+
+  const TITLES = { lobby: 'Lobby', profile: 'Profile', game: 'Game', table: 'Table', login: 'Log in' };
+
+  function navigate(path, { replace = false } = {}) {
+    if (path !== location.pathname) history[replace ? 'replaceState' : 'pushState'](null, '', path);
+    route();
+  }
+
+  let routed = null; // the path whose page is showing
+  let seatTimer = null;
+
+  // Shows the page for the current address.
+  function route({ force = false } = {}) {
+    const r = currentRoute();
+    if (!state.token) {
+      routed = null;
+      return show('login');
+    }
+    if (state.table) {
+      if (r.screen === 'table' && r.id === state.table.id) return show('table');
+      // the address left the table (back/forward, or the logo): leaving needs a yes
+      return confirmLeave();
+    }
+    if (!force && routed === r.path && state.screen === r.screen) return;
+    routed = r.path;
+    if (r.path !== location.pathname) history.replaceState(null, '', r.path);
+    if (r.screen === 'profile') return openProfile();
+    if (r.screen === 'game') return openGame(r.id);
+    if (r.screen === 'table') return awaitSeat();
+    return show('lobby');
+  }
+
+  // A refresh at /tables/<id>: the server gives a held seat back right after the
+  // welcome. If none comes, the seat is gone and the lobby is the place to be.
+  function awaitSeat() {
+    if (state.screen !== 'table') show('lobby');
+    clearTimeout(seatTimer);
+    if (!state.playerId) return; // not welcomed yet: the welcome routes again
+    seatTimer = setTimeout(() => {
+      if (state.table || currentRoute().screen !== 'table') return;
+      toast("You're no longer seated at that table", 'info');
+      navigate('/', { replace: true });
+    }, 2500);
+  }
+
+  function confirmLeave() {
+    const dialog = $('leave-dialog');
+    if (!dialog.open) dialog.showModal();
+  }
+
+  function stayAtTable() {
+    if ($('leave-dialog').open) $('leave-dialog').close();
+    // put the table's address back where the history had moved on from it
+    if (state.table) history.pushState(null, '', `/tables/${state.table.id}`);
   }
 
   // the profile and a game's details are pages of their own, kept across reconnects
@@ -274,6 +350,7 @@ import { Table3D } from './table3d.js';
     if (screen !== state.screen) window.scrollTo(0, 0);
     state.screen = screen;
     for (const s of ['login', 'lobby', 'table', 'profile', 'game']) $(`screen-${s}`).hidden = s !== screen;
+    document.title = `${TITLES[screen]} · Hold'em Night`;
     $('profile-button').disabled = Boolean(state.table);
     $('home-link').title = state.table ? 'Leave the table to go back to the lobby' : 'Home';
   }
@@ -472,6 +549,7 @@ import { Table3D } from './table3d.js';
 
   function renderTable(t) {
     $('table-title').textContent = t.name;
+    document.title = `${t.name} · Hold'em Night`;
     $('blinds').textContent = `Blinds ${t.smallBlind}/${t.bigBlind} · Hand #${t.handNumber}`;
     // at showdown the cards that make the winning hand glow, the rest dim
     const winning = new Set(
@@ -814,7 +892,6 @@ import { Table3D } from './table3d.js';
   }
 
   async function openProfile() {
-    if (state.table) return;
     closeProfile();
     show('profile');
     const request = profileRequest;
@@ -882,7 +959,7 @@ import { Table3D } from './table3d.js';
       open.id = `game-${g.id}`;
       open.textContent = g.tableName;
       open.title = 'See this game in detail';
-      open.addEventListener('click', () => openGame(g.id));
+      open.addEventListener('click', () => navigate(`/games/${g.id}`));
       name.append(open);
       tr.append(
         name,
@@ -940,6 +1017,7 @@ import { Table3D } from './table3d.js';
   function renderGame({ game, players, settlement }, charts) {
     const practice = game.mode === 'bot';
     $('game-name').textContent = game.tableName;
+    document.title = `${game.tableName} · Hold'em Night`;
     $('game-mode').textContent = practice ? 'Practice' : 'Real chips';
     $('game-mode').className = `mode-badge${practice ? ' practice' : ''}`;
     $('game-when').textContent = `${formatWhen(game.startedAt)} – ${formatWhen(game.endedAt)} · ${duration(game.endedAt - game.startedAt)}`;
@@ -1148,15 +1226,29 @@ import { Table3D } from './table3d.js';
   });
 
   $('logout-button').addEventListener('click', logOut);
-  $('profile-button').addEventListener('click', openProfile);
+  $('profile-button').addEventListener('click', () => navigate('/profile'));
   $('home-link').addEventListener('click', (e) => {
     // ordinary clicks stay in the page; ctrl/cmd/middle-click still open a new tab
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
-    goHome();
+    navigate('/');
   });
-  $('profile-back').addEventListener('click', () => show(state.table ? 'table' : 'lobby'));
-  $('game-back').addEventListener('click', openProfile);
+  $('profile-back').addEventListener('click', () => navigate('/'));
+  $('game-back').addEventListener('click', () => navigate('/profile'));
+  window.addEventListener('popstate', () => route());
+  $('leave-stay').addEventListener('click', stayAtTable);
+  $('leave-confirm').addEventListener('click', () => {
+    $('leave-dialog').close('leave');
+    send({ type: 'leaveTable' });
+  });
+  // Esc or a click outside means stay
+  $('leave-dialog').addEventListener('cancel', (e) => {
+    e.preventDefault();
+    stayAtTable();
+  });
+  $('leave-dialog').addEventListener('click', (e) => {
+    if (e.target === $('leave-dialog')) stayAtTable();
+  });
   $('settle-form').addEventListener('input', renderSettlement);
   $('settle-form').addEventListener('submit', (e) => e.preventDefault());
 
@@ -1210,12 +1302,24 @@ import { Table3D } from './table3d.js';
     send({ type: 'action', action: state.table && state.table.currentBet === 0 ? 'bet' : 'raise', amount });
   });
 
+  // Leaving the page (reload, another address, closing the tab) closes the socket
+  // at once, so the server holds the seat for the next page straight away instead
+  // of noticing only when the connection times out. A page restored from the
+  // back/forward cache connects again.
+  window.addEventListener('pagehide', () => {
+    if (!state.ws) return;
+    state.ws.onclose = null;
+    state.ws.close();
+  });
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) connect();
+  });
+
   renderRankings();
-  // returning player: skip the login screen and wait for the server's welcome
-  if (state.token && state.name) {
-    $('welcome').textContent = `Welcome, ${state.name}`;
-    show('lobby');
-  }
+  // returning player: skip the login screen; the profile and game pages load
+  // straight away, a table waits for the server to give the seat back
+  if (state.token && state.name) $('welcome').textContent = `Welcome, ${state.name}`;
+  route();
   renderUser();
   connect();
 })();
