@@ -518,7 +518,7 @@ import { Table3D } from './table3d.js';
         tag.className = 'tag';
         tag.textContent = 'D';
         tag.title = 'Dealer button';
-        name.append(' ', tag);
+        name.append(tag); // spaced by the row's gap, so the name's text stays exact
       }
       const cards = document.createElement('div');
       cards.className = 'cards';
