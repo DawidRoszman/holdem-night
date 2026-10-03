@@ -496,34 +496,41 @@ import { Table3D } from './table3d.js';
     tickClocks();
   }
 
+  // Writes a property only when it changes: the countdowns tick four times a second
+  // but show whole seconds, so the page changes once a second, not on every tick.
+  function put(el, prop, value) {
+    if (el[prop] !== value) el[prop] = value;
+  }
+
   function tickClocks() {
     const now = performance.now();
     const t = state.table;
-    const turnLeft = clocks.turnEnds === null ? null : Math.max(0, clocks.turnEnds - now);
-    const urgent = turnLeft !== null && turnLeft <= 10_000;
+    const turnLeft = clocks.turnEnds === null ? null : Math.ceil(Math.max(0, clocks.turnEnds - now) / 1000);
+    const urgent = turnLeft !== null && turnLeft <= 10;
     const bar = $('turn-clock');
     if (bar) {
-      bar.classList.toggle('urgent', urgent);
-      bar.firstChild.style.width = `${clocks.turnTotal ? (100 * (turnLeft ?? 0)) / clocks.turnTotal : 0}%`;
-      bar.title = turnLeft === null ? '' : `${Math.ceil(turnLeft / 1000)}s left to act`;
+      if (bar.classList.contains('urgent') !== urgent) bar.classList.toggle('urgent', urgent);
+      const total = Math.ceil(clocks.turnTotal / 1000);
+      put(bar.firstChild.style, 'width', `${total ? (100 * (turnLeft ?? 0)) / total : 0}%`);
+      put(bar, 'title', turnLeft === null ? '' : `${turnLeft}s left to act`);
     }
     const mine = Boolean(t && t.you && t.you.legal && turnLeft !== null);
     const timer = $('turn-timer');
-    timer.hidden = !mine;
+    put(timer, 'hidden', !mine);
     if (mine) {
       const fallback = t.you.legal.canCheck ? 'check' : 'fold';
-      timer.textContent = `${Math.ceil(turnLeft / 1000)}s left`;
-      timer.title = `When time runs out you ${fallback} automatically`;
-      timer.classList.toggle('urgent', urgent);
+      put(timer, 'textContent', `${turnLeft}s left`);
+      put(timer, 'title', `When time runs out you ${fallback} automatically`);
+      if (timer.classList.contains('urgent') !== urgent) timer.classList.toggle('urgent', urgent);
       if (urgent && !clocks.announced) {
         clocks.announced = true;
-        $('timer-announcer').textContent = `${Math.ceil(turnLeft / 1000)} seconds left, then you ${fallback} automatically`;
+        $('timer-announcer').textContent = `${turnLeft} seconds left, then you ${fallback} automatically`;
       }
     }
     const next = $('next-hand');
-    const nextLeft = clocks.nextHand === null ? null : Math.max(0, clocks.nextHand - now);
-    next.hidden = nextLeft === null;
-    if (nextLeft !== null) next.textContent = `Next hand in ${Math.ceil(nextLeft / 1000)}s`;
+    const nextLeft = clocks.nextHand === null ? null : Math.ceil(Math.max(0, clocks.nextHand - now) / 1000);
+    put(next, 'hidden', nextLeft === null);
+    if (nextLeft !== null) put(next, 'textContent', `Next hand in ${nextLeft}s`);
   }
   setInterval(tickClocks, 250);
 

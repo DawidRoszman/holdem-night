@@ -453,7 +453,8 @@
   .table-rules { @apply mt-1 text-sm text-muted-foreground; }
   /* drains while the seat's player is thinking */
   .turn-clock { @apply mt-1 h-1.5 overflow-hidden rounded-full bg-foreground/20; }
-  .turn-clock > span { @apply block h-full rounded-full bg-success transition-[width] duration-300 ease-linear; }
+  /* steps down once a second with the countdown: no animation, so the page is still in between */
+  .turn-clock > span { @apply block h-full rounded-full bg-success; }
   .turn-clock.urgent > span { @apply bg-destructive; }
   .turn-timer { @apply min-w-24 text-center text-sm font-bold tabular-nums; }
   .turn-timer.urgent { @apply text-destructive; }
