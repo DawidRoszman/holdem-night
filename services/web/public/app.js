@@ -39,14 +39,16 @@ import { Table3D } from './table3d.js';
   }
   $('felt').classList.add(table3d ? 'felt-3d' : 'felt');
 
-  // The login session (token + username) survives a page refresh within this
-  // tab (sessionStorage), so a reload logs straight back in.
+  // The session itself is an HttpOnly cookie that this script never sees: the
+  // browser sends it with every API call and with the WebSocket handshake. This
+  // tab only remembers who is logged in (sessionStorage), so a reload can draw
+  // the right page before the server confirms it.
   const SESSION_KEY = 'holdem.session';
   const savedSession = {
     get() {
       try {
         const s = JSON.parse(sessionStorage.getItem(SESSION_KEY));
-        return s && s.token ? s : null;
+        return s && s.name ? s : null;
       } catch { return null; }
     },
     set(session) {
@@ -60,7 +62,7 @@ import { Table3D } from './table3d.js';
   const session = savedSession.get();
   const state = {
     ws: null,
-    token: session && session.token,
+    loggedIn: Boolean(session),
     name: session && session.name,
     bank: null,
     playerId: null,
@@ -76,10 +78,12 @@ import { Table3D } from './table3d.js';
 
   async function api(path, { body, method = 'POST' } = {}) {
     const headers = { 'Content-Type': 'application/json' };
-    if (state.token) headers.Authorization = `Bearer ${state.token}`;
     let res;
     try {
-      res = await fetch(`/api/accounts${path}`, { method, headers, body: body && JSON.stringify(body) });
+      // the session cookie goes along with every same-origin request
+      res = await fetch(`/api/accounts${path}`, {
+        method, headers, credentials: 'same-origin', body: body && JSON.stringify(body),
+      });
     } catch {
       throw new Error('Cannot reach the server');
     }
@@ -131,7 +135,8 @@ import { Table3D } from './table3d.js';
     ws.onopen = () => {
       setConnection('Connected', 'ok');
       state.reconnectDelay = 500;
-      if (state.token) send({ type: 'hello', token: state.token });
+      // the handshake carried the session cookie, if there is one: the server answers welcome or authError
+      send({ type: 'hello' });
     };
     ws.onmessage = (event) => handle(JSON.parse(event.data));
     ws.onclose = () => {
@@ -161,7 +166,8 @@ import { Table3D } from './table3d.js';
       case 'welcome':
         state.playerId = msg.playerId;
         state.name = msg.name;
-        savedSession.set({ token: state.token, name: msg.name });
+        state.loggedIn = true;
+        savedSession.set({ name: msg.name });
         $('welcome').textContent = `Welcome, ${msg.name}`;
         state.timing = msg.timing || null;
         renderLobbyTiming();
@@ -169,7 +175,9 @@ import { Table3D } from './table3d.js';
         route();
         break;
       case 'authError':
-        expireSession(msg.message);
+        // only news if this tab thought it was logged in; otherwise the login page is already right
+        if (state.loggedIn) expireSession(msg.message);
+        else route();
         break;
       case 'account':
         setBank(msg.chips);
@@ -216,7 +224,7 @@ import { Table3D } from './table3d.js';
   // ------------------------------------------------------------- rendering
 
   function renderUser() {
-    const loggedIn = Boolean(state.token && state.name);
+    const loggedIn = Boolean(state.loggedIn && state.name);
     $('user-name').textContent = state.name || '';
     $('user-initial').textContent = state.name ? state.name.trim()[0].toUpperCase() : '';
     $('user-menu').hidden = !loggedIn;
@@ -228,21 +236,30 @@ import { Table3D } from './table3d.js';
     if (state.table) renderBustedBank(state.table);
   }
 
-  function signedIn(token, user) {
-    state.token = token;
+  // Connects again at once, so the new handshake carries the current cookie.
+  function reconnect() {
+    if (state.ws) {
+      state.ws.onclose = null;
+      state.ws.close();
+    }
+    connect();
+  }
+
+  function signedIn(user) {
+    state.loggedIn = true;
     state.name = user.username;
     state.bank = null;
-    savedSession.set({ token, name: user.username });
+    savedSession.set({ name: user.username });
     $('password-input').value = '';
     $('auth-error').hidden = true;
-    // the server answers with a welcome, which opens the lobby
-    if (state.ws && state.ws.readyState === WebSocket.OPEN) send({ type: 'hello', token });
+    // the socket was opened before the login set the cookie; the new one says hello with it
+    reconnect();
   }
 
   function signedOut({ keepPage = false } = {}) {
     if (!keepPage) history.replaceState(null, '', '/');
     savedSession.clear();
-    state.token = null;
+    state.loggedIn = false;
     state.name = null;
     state.bank = null;
     state.playerId = null;
@@ -253,13 +270,13 @@ import { Table3D } from './table3d.js';
     renderUser();
     $('password-input').value = '';
     show('login');
-    // the server cashes our stack out; we reconnect anonymously
-    if (state.ws) state.ws.close();
+    // the server cashes our stack out; a fresh connection carries no session any more
+    reconnect();
   }
 
-  function logOut() {
-    // fire and forget: the token is dropped locally either way
-    api('/logout').catch(() => {});
+  async function logOut() {
+    // the server clears the cookie; wait for that, or the reconnect would log straight back in
+    await api('/logout').catch(() => {});
     signedOut();
   }
 
@@ -299,7 +316,7 @@ import { Table3D } from './table3d.js';
   // Shows the page for the current address.
   function route({ force = false } = {}) {
     const r = currentRoute();
-    if (!state.token) {
+    if (!state.loggedIn) {
       routed = null;
       return show('login');
     }
@@ -1298,8 +1315,8 @@ import { Table3D } from './table3d.js';
     buttons.forEach((b) => { b.disabled = true; });
     $('auth-error').hidden = true;
     try {
-      const { token, user } = await api(`/${mode}`, { body: { username, password } });
-      signedIn(token, user);
+      const { user } = await api(`/${mode}`, { body: { username, password } });
+      signedIn(user);
     } catch (err) {
       showAuthError(err.message);
     } finally {
@@ -1354,7 +1371,7 @@ import { Table3D } from './table3d.js';
   renderRankings();
   // returning player: skip the login screen; the profile and game pages load
   // straight away, a table waits for the server to give the seat back
-  if (state.token && state.name) $('welcome').textContent = `Welcome, ${state.name}`;
+  if (state.loggedIn && state.name) $('welcome').textContent = `Welcome, ${state.name}`;
   route();
   renderUser();
   connect();
