@@ -1,0 +1,17 @@
+{
+  "name": "game-service",
+  "version": "1.0.0",
+  "description": "Texas Hold'em multiplayer game microservice (WebSocket)",
+  "main": "src/server.js",
+  "private": true,
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  }
+}
