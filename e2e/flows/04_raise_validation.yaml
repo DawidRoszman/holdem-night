@@ -13,6 +13,8 @@ env:
 - tapOn:
     id: "table-name-input"
 - inputText: "Raise Room"
+# bots only sit at practice tables
+- tapOn: "Practice vs bots"
 - tapOn: "Create table"
 - tapOn: "Add bot"
 - extendedWaitUntil:

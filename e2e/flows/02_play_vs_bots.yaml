@@ -13,6 +13,8 @@ env:
 - tapOn:
     id: "table-name-input"
 - inputText: "Bot Arena"
+# bots only sit at practice tables
+- tapOn: "Practice vs bots"
 - tapOn: "Create table"
 - assertVisible: "Waiting for players…"
 - tapOn: "Add bot"

@@ -1,0 +1,80 @@
+url: ${APP_URL}
+name: Profile - practice games are free, and the profile shows stats, charts and history
+tags:
+  - accounts
+env:
+  APP_URL: http://localhost:8090
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Connected"
+    timeout: 10000
+- runFlow:
+    when:
+      visible:
+        id: "logout-button"
+    commands:
+      - tapOn:
+          id: "logout-button"
+# a brand-new account every run, so the numbers below are exact
+- evalScript: ${output.user = 'Stats ' + Math.floor(Math.random() * 1000000)}
+- tapOn:
+    id: "username-input"
+- inputText: ${output.user}
+- tapOn:
+    id: "password-input"
+- inputText: "stats-secret"
+- tapOn:
+    id: "register-button"
+- extendedWaitUntil:
+    visible: "Welcome, ${output.user}"
+    timeout: 10000
+# a practice table against a bot: the buy-in is free
+- tapOn:
+    id: "table-name-input"
+- inputText: "Practice Pit"
+- tapOn: "Practice vs bots"
+- tapOn: "Create table"
+- assertVisible: "Practice · no chips at stake"
+- assertVisible:
+    id: "bank-amount"
+    text: "1,000"
+- tapOn: "Add bot"
+- extendedWaitUntil:
+    visible: "Your turn"
+    timeout: 15000
+- tapOn:
+    id: "fold-button"
+- assertVisible: "Ada \\(bot\\) wins 30"
+- tapOn: "Leave table"
+- assertVisible: "Welcome, ${output.user}"
+- assertVisible:
+    id: "bank-amount"
+    text: "1,000"
+# the profile
+- tapOn:
+    id: "profile-button"
+- extendedWaitUntil:
+    visible: "Playing since .*"
+    timeout: 10000
+- assertVisible: "Net result"
+- assertVisible: "Chips added"
+- assertVisible: "0 of 1 hands won"
+# the practice game is in the history, but no real-chip game was played
+- assertVisible: "Practice Pit"
+- assertVisible: "No real-chip games yet.*"
+# the deposits list is at the bottom of the page
+- scrollUntilVisible:
+    element: "Welcome bonus"
+    direction: DOWN
+- assertVisible:
+    id: "deposits-total"
+    text: "1,000"
+- scrollUntilVisible:
+    element:
+      id: "profile-back"
+    direction: UP
+- tapOn:
+    id: "profile-back"
+- assertVisible: "Open tables"
