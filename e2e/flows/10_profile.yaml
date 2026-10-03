@@ -54,9 +54,13 @@ env:
 - assertVisible:
     id: "bank-amount"
     text: "1,000"
-# the profile
+# the profile has its own address: a reload stays on it
 - tapOn:
     id: "profile-button"
+- extendedWaitUntil:
+    visible: "Playing since .*"
+    timeout: 10000
+- openLink: ${APP_URL}/profile
 - extendedWaitUntil:
     visible: "Playing since .*"
     timeout: 10000
