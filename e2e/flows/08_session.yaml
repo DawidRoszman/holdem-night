@@ -20,6 +20,25 @@ env:
     timeout: 10000
 - assertNotVisible:
     id: "password-input"
+# reload while seated: the seat is held and the page goes straight back to the table
+- tapOn:
+    id: "table-name-input"
+- inputText: "Rosa Reloads"
+- tapOn: "Practice vs bots"
+- tapOn: "Create table"
+- assertVisible:
+    id: "table-title"
+    text: "Rosa Reloads"
+- openLink: ${APP_URL}
+- extendedWaitUntil:
+    visible: "Welcome back: you're still seated at Rosa Reloads"
+    timeout: 10000
+- assertVisible:
+    id: "table-title"
+    text: "Rosa Reloads"
+- assertVisible: ".*your seat is held for \\d+s.*"
+- tapOn: "Leave table"
+- assertVisible: "Welcome, ${PLAYER_NAME}"
 # log out: back to the login screen, and a reload keeps it that way
 - tapOn:
     id: "logout-button"

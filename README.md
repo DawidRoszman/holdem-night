@@ -39,7 +39,7 @@ At showdown the game service calls the evaluator, retrying once. If the evaluato
 - **The host starts the game.** Whoever creates a table hosts it; if they leave, the next human seated takes over. No cards are dealt until the host sends `startGame` (the **Start game** button), which needs at least two players with chips. Only the first hand waits for the host. After that, hands are dealt automatically, including after a pause for players to rebuy or join.
 - **Turn clock**: each turn lasts `TURN_TIMEOUT_MS` (30 s by default; `0` turns it off). When it runs out the server checks for the player if it can, otherwise folds, and sends them a `notice`. The clock starts once per turn: other players joining, leaving or rebuying don't reset it.
 - **Between hands**: the next hand is dealt `NEXT_HAND_DELAY_MS` (5 s by default) after the last one ends.
-- **What players see**: `welcome.timing` and every `state.table.timing` carry `{turnTimeoutMs, nextHandDelayMs}`. State also carries the live `turnEndsIn` and `nextHandIn` (ms left, or `null`). The table screen and the lobby spell out the rules. The player to act has a draining bar under their seat, your own turn shows "Ns left" next to the action buttons (and is announced to screen readers 10 s before the end), and "Next hand in Ns" shows between hands.
+- **What players see**: `welcome.timing` and every `state.table.timing` carry `{turnTimeoutMs, nextHandDelayMs, reconnectGraceMs}`. State also carries the live `turnEndsIn` and `nextHandIn` (ms left, or `null`). The table screen and the lobby spell out the rules. The player to act has a draining bar under their seat, your own turn shows "Ns left" next to the action buttons (and is announced to screen readers 10 s before the end), and "Next hand in Ns" shows between hands.
 
 ### Table types
 
@@ -62,7 +62,7 @@ At showdown the game service calls the evaluator, retrying once. If the evaluato
 - **Passwords** are salted `scrypt` hashes. Session tokens are random and stored only as SHA-256 hashes; they expire after 7 days.
 - **Internal API**: `POST /internal/session`, `/internal/debit`, `/internal/credit` and `/internal/game` are for the game service only. They need the shared `X-Internal-Key` (`ACCOUNTS_INTERNAL_KEY`), and the gateway answers 404 for them.
 - **Buying in**: sitting down at a table takes the buy-in (200 to 5,000, default 1,000) out of your bank, and it becomes your stack. A rebuy costs the same amount again.
-- **Cashing out**: leaving the table, logging out or closing the tab pays your stack back to the bank (after the hand, if you leave mid-hand). If the game service is stopped, it cancels any hand in progress and pays every player's stack and current bets back before exiting.
+- **Cashing out**: leaving the table or logging out pays your stack back to the bank (after the hand, if you leave mid-hand). Closing the tab or losing the connection does the same once the seat stops being held (see *Reconnecting* below). If the game service is stopped, it cancels any hand in progress and pays every player's stack and current bets back before exiting.
 - **Game records**: when a player leaves a table, the game service sends one `POST /internal/game {userId, amount, note, game}`. The accounts service pays `amount` back (always 0 for practice games) and stores the game (table, type, total buy-in including rebuys, cash-out, hands played and won, biggest single-hand win) in the same database transaction. A sitting where no hand was dealt is paid back but not recorded.
 - **One table per account**: the same account can't sit at two tables at once, e.g. from two tabs.
 - **Not covered**: if the game service crashes outright (rather than being stopped), chips on the table at that moment are lost.
@@ -75,7 +75,7 @@ docker compose up -d --build --wait
 open http://localhost:8090        # host port: WEB_PORT (default 8090)
 ```
 
-Tunables (env vars for compose): `WEB_PORT`, `BOT_DELAY_MS`, `NEXT_HAND_DELAY_MS`, `TURN_TIMEOUT_MS`, `WELCOME_CHIPS`, and `ACCOUNTS_INTERNAL_KEY` (**set your own** anywhere other than your machine; the default is a placeholder).
+Tunables (env vars for compose): `WEB_PORT`, `BOT_DELAY_MS`, `NEXT_HAND_DELAY_MS`, `TURN_TIMEOUT_MS`, `RECONNECT_GRACE_MS`, `WELCOME_CHIPS`, and `ACCOUNTS_INTERNAL_KEY` (**set your own** anywhere other than your machine; the default is a placeholder).
 
 Accounts live in the `holdem_accounts-data` volume and survive `docker compose down`; `docker compose down -v` wipes them.
 
@@ -83,7 +83,9 @@ Create an account (or log in), buy chips in the lobby if you need more, and pick
 
 - **Results**: after each hand a banner says whether you won or lost and by how much, and why the winner won (e.g. *"Three Queens beats Bob's Two Pair, Kings and Sevens"*, or a kicker comparison). The winning five cards glow, every revealed hand is labelled, and each seat shows its chip change.
 - **Going broke**: a player who runs out of chips keeps their seat, sees the hand that busted them, and gets a dialog to **Rebuy** (paid from the bank; if the bank is short, the button buys a pack first) or go **Back to lobby**. A player left alone with chips sees *"You won the table!"*.
-- **Session**: your login token is kept in `sessionStorage`, so refreshing the page logs you straight back in. **Log out** in the header ends the session on the server too. A refresh during a hand still leaves the table (the connection drops, and your stack goes back to the bank), but you land back in the lobby, still logged in.
+- **Session**: your login token is kept in `sessionStorage`, so refreshing the page logs you straight back in. **Log out** in the header leaves your table and ends the session on the server too.
+- **Reconnecting**: refreshing the page (or a dropped connection) at a table doesn't cost you your seat. The server holds it for `RECONNECT_GRACE_MS` (60 s by default; `0` turns it off), and the other players see *Reconnecting…* on it. When you sign in again with the same account within that time, you land straight back at the table with your cards, your stack, host role and the turn clock as they were, plus a *Welcome back* message. While you're away the turn clock still runs, so your hand may be checked or folded for you. After the grace period you leave the table and your stack is paid back. Guest mode has no account to come back as, so guests leave at once.
+- **Header**: the logo and *Hold'em Night* title go back home: the lobby, or the login screen when logged out. At a table they keep you there, because getting to the lobby means leaving the table.
 - **Bank**: your balance is always in the header; the lobby has the chip shop and the buy-in field.
 - **Table type**: the lobby's *Real chips* / *Practice vs bots* picker sets the type of the table you create. Each table in the list is labelled with its type; practice tables show *Practice · no chips at stake*, and only they have **Add bot**.
 - **Profile**: click your initial or name in the header (from the lobby). It shows money stats from real-chip games (net result, chips won and lost, biggest hand win, best game, hands won), chips added to the bank and practice totals. Below that: a step chart of the bank balance after every change, a bar chart of each real-chip game's result (won in blue, lost in rust, a pair checked for colour-blind separation), the game history and the chips added (welcome bonus and packs). The charts use [TanStack Charts](https://tanstack.com/charts/latest) through its framework-free DOM host (`services/web/src/profile-charts.js`). The bundle loads only when the profile opens.
@@ -127,7 +129,7 @@ Flows sign in through `common/login.yaml`, which creates each test account on th
 | `05_multiplayer` | join another player's table from the lobby and play a hand over WebSockets |
 | `06_hand_rankings` | hand rankings cheat-sheet modal opens and closes mid-hand |
 | `07_bust_or_win` | all-in until someone busts: rebuy dialog, or "You won the table!" |
-| `08_session` | login survives a reload; log out returns to the login screen |
+| `08_session` | login survives a reload; a reload at a table goes straight back to the held seat; log out returns to the login screen |
 | `09_bank` | register a new account, buy a pack, buy in (bank goes down), leave (stack paid back), wrong password rejected, balance kept after logging back in, buy-in above the bank refused |
 | `10_profile` | a practice game against a bot leaves the bank untouched; the profile shows the stats, the game in the history, no real-chip games and the welcome bonus |
 
