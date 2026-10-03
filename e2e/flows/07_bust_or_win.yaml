@@ -17,6 +17,8 @@ env:
 - tapOn: "Practice vs bots"
 - tapOn: "Create table"
 - tapOn: "Add bot"
+# the host deals the first hand
+- tapOn: "Start game"
 # heads-up all-in against a bot that always calls: one of us busts (a split pot just deals again)
 - repeat:
     times: 10

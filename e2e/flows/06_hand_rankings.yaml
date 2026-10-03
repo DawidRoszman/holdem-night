@@ -17,6 +17,8 @@ env:
 - tapOn: "Practice vs bots"
 - tapOn: "Create table"
 - tapOn: "Add bot"
+# the host deals the first hand
+- tapOn: "Start game"
 - extendedWaitUntil:
     visible: "Your turn"
     timeout: 15000

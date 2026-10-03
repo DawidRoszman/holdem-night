@@ -17,9 +17,15 @@ env:
 - tapOn: "Practice vs bots"
 - tapOn: "Create table"
 - tapOn: "Add bot"
+# the host deals the first hand
+- tapOn: "Start game"
 - extendedWaitUntil:
     visible: "Your turn"
     timeout: 15000
+# the turn clock counts down next to the action buttons
+- assertVisible:
+    id: "turn-timer"
+    text: "\\d+s left"
 # heads-up: the button posts the small blind and acts first, facing 10 to call
 - assertVisible: "Call 10"
 - assertVisible: "Pot: 30"

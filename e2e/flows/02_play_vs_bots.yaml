@@ -21,7 +21,10 @@ env:
 - assertVisible: "Ada \\(bot\\)"
 - tapOn: "Add bot"
 - assertVisible: "Bender \\(bot\\)"
-# the hand starts automatically once two or more players are seated
+# nothing is dealt until the host starts the game; the timings are spelled out
+- assertVisible: "Press Start game when everyone is seated"
+- assertVisible: ".*Each turn lasts \\d+s.*"
+- tapOn: "Start game"
 - extendedWaitUntil:
     visible: ".*Hand #1"
     timeout: 10000

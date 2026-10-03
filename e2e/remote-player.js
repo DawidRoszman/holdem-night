@@ -2,7 +2,7 @@
 
 // A scripted human-like player used by the multiplayer e2e flow. It connects
 // over the same public WebSocket endpoint as the browser, opens a table and
-// always checks or calls, so the Maestro-driven browser player has a real
+// starts the game once someone joins and always checks or calls, so the Maestro-driven browser player has a real
 // second client to play against. It signs in through the accounts API like
 // the browser does (creating its account on first use).
 //
@@ -48,6 +48,8 @@ async function start() {
   ws.addEventListener('message', (event) => {
     const msg = JSON.parse(event.data);
     if (msg.type === 'state') {
+      // it hosts its table: start the game as soon as someone sits down with it
+      if (msg.table.you && msg.table.you.canStart) ws.send(JSON.stringify({ type: 'startGame' }));
       const legal = msg.table.you && msg.table.you.legal;
       if (legal) {
         setTimeout(() => {

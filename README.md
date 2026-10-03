@@ -25,14 +25,21 @@ At showdown the game service calls the evaluator, retrying once. If the evaluato
 
 | Client → server | Server → client |
 |---|---|
-| `{type:"hello", token}` | `{type:"welcome", playerId, name, chips}` or `{type:"authError", message}` |
+| `{type:"hello", token}` | `{type:"welcome", playerId, name, chips, timing}` or `{type:"authError", message}` |
 | `{type:"listTables"}` | `{type:"tables", tables:[…]}` |
 | `{type:"createTable", name, buyIn?, mode?}` / `{type:"joinTable", tableId, buyIn?}` | `{type:"state", table}`: per-player view; opponents' cards stay hidden until showdown |
-| `{type:"leaveTable"}` / `{type:"addBot"}` / `{type:"rebuy"}` | `{type:"left", reason?}` |
+| `{type:"leaveTable"}` / `{type:"addBot"}` / `{type:"rebuy"}` / `{type:"startGame"}` | `{type:"left", reason?}` / `{type:"notice", message}` |
 | | `{type:"account", chips}`: new bank balance after a buy-in, rebuy or cash-out |
 | `{type:"action", action:"fold"\|"check"\|"call"\|"bet"\|"raise"\|"allin", amount?}` | `{type:"error", message}` |
 
 `amount` for bet/raise is the total bet for the street ("raise **to**"). `mode` is `"normal"` (the default) or `"bot"`, and tables and table summaries carry it. `addBot` is refused at normal tables. Messages from one connection are handled in order.
+
+### Starting a game and timings
+
+- **The host starts the game.** Whoever creates a table hosts it; if they leave, the next human seated takes over. No cards are dealt until the host sends `startGame` (the **Start game** button), which needs at least two players with chips. Only the first hand waits for the host. After that, hands are dealt automatically, including after a pause for players to rebuy or join.
+- **Turn clock**: each turn lasts `TURN_TIMEOUT_MS` (30 s by default; `0` turns it off). When it runs out the server checks for the player if it can, otherwise folds, and sends them a `notice`. The clock starts once per turn: other players joining, leaving or rebuying don't reset it.
+- **Between hands**: the next hand is dealt `NEXT_HAND_DELAY_MS` (5 s by default) after the last one ends.
+- **What players see**: `welcome.timing` and every `state.table.timing` carry `{turnTimeoutMs, nextHandDelayMs}`. State also carries the live `turnEndsIn` and `nextHandIn` (ms left, or `null`). The table screen and the lobby spell out the rules. The player to act has a draining bar under their seat, your own turn shows "Ns left" next to the action buttons (and is announced to screen readers 10 s before the end), and "Next hand in Ns" shows between hands.
 
 ### Table types
 
@@ -72,7 +79,7 @@ Tunables (env vars for compose): `WEB_PORT`, `BOT_DELAY_MS`, `NEXT_HAND_DELAY_MS
 
 Accounts live in the `holdem_accounts-data` volume and survive `docker compose down`; `docker compose down -v` wipes them.
 
-Create an account (or log in), buy chips in the lobby if you need more, and pick a buy-in. Open the page in two browser windows with two accounts to play each other, or press **Add bot**. During a hand, **Hand rankings** opens a cheat sheet of all hand combinations.
+Create an account (or log in), buy chips in the lobby if you need more, and pick a buy-in. Open the page in two browser windows with two accounts to play each other, or pick *Practice vs bots* and press **Add bot**. Then the host presses **Start game**. During a hand, **Hand rankings** opens a cheat sheet of all hand combinations.
 
 - **Results**: after each hand a banner says whether you won or lost and by how much, and why the winner won (e.g. *"Three Queens beats Bob's Two Pair, Kings and Sevens"*, or a kicker comparison). The winning five cards glow, every revealed hand is labelled, and each seat shows its chip change.
 - **Going broke**: a player who runs out of chips keeps their seat, sees the hand that busted them, and gets a dialog to **Rebuy** (paid from the bank; if the bank is short, the button buys a pack first) or go **Back to lobby**. A player left alone with chips sees *"You won the table!"*.
@@ -95,7 +102,7 @@ Create an account (or log in), buy chips in the lobby if you need more, and pick
 ```bash
 (cd services/evaluator && npm test)            # hand evaluator + REST API
 (cd services/accounts && npm test)             # passwords, sessions, chip ledger, game records, profile stats, REST API (in-memory SQLite)
-(cd services/game && npm ci && npm test)       # betting engine, side pots, lobby, table types, bank buy-ins/cash-outs, game stats, bots, WS server
+(cd services/game && npm ci && npm test)       # betting engine, side pots, lobby, table types, host start, turn clock, bank buy-ins/cash-outs, game stats, bots, WS server
 docker build --target test services/game      # same tests inside the image build (also accounts, evaluator)
 ```
 
@@ -109,13 +116,13 @@ Requires Maestro ≥ 2.x, Google Chrome, Docker and Node ≥ 22.
 KEEP_UP=1 ./e2e/run.sh              # leave the stack running afterwards
 ```
 
-Flows sign in through `common/login.yaml`, which creates each test account on the first run, logs into it after that, and buys a 1,000 pack so repeated runs never empty the bank. `run.sh` also starts `e2e/remote-player.js`. It is a second, scripted player (it signs in through the accounts API) that connects over the public WebSocket endpoint and opens "Remote Table", so the multiplayer flow plays against another real client. A JUnit report is written to `e2e/report.xml`.
+Flows sign in through `common/login.yaml`, which creates each test account on the first run, logs into it after that, and buys a 1,000 pack so repeated runs never empty the bank. `run.sh` also starts `e2e/remote-player.js`. It is a second, scripted player (it signs in through the accounts API) that connects over the public WebSocket endpoint and opens "Remote Table", then starts the game when someone joins, so the multiplayer flow plays against another real client. A JUnit report is written to `e2e/report.xml`.
 
 | Flow | Covers |
 |---|---|
 | `01_lobby` | log in, create table, leave table |
-| `02_play_vs_bots` | full hand to showdown vs. two bots, next hand auto-deals |
-| `03_fold` | blinds, fold, uncontested pot |
+| `02_play_vs_bots` | nothing is dealt until the host presses Start game, the timing rules are shown, full hand to showdown vs. two bots, next hand auto-deals |
+| `03_fold` | turn countdown, blinds, fold, uncontested pot |
 | `04_raise_validation` | server rejects an under-minimum raise; a legal raise is called |
 | `05_multiplayer` | join another player's table from the lobby and play a hand over WebSockets |
 | `06_hand_rankings` | hand rankings cheat-sheet modal opens and closes mid-hand |
@@ -124,4 +131,4 @@ Flows sign in through `common/login.yaml`, which creates each test account on th
 | `09_bank` | register a new account, buy a pack, buy in (bank goes down), leave (stack paid back), wrong password rejected, balance kept after logging back in, buy-in above the bank refused |
 | `10_profile` | a practice game against a bot leaves the bank untouched; the profile shows the stats, the game in the history, no real-chip games and the welcome bonus |
 
-The bot flows (`02`, `03`, `04`, `06`, `07`) pick *Practice vs bots* before creating their table.
+The bot flows (`02`, `03`, `04`, `06`, `07`, `10`) pick *Practice vs bots* before creating their table, and press **Start game** after adding their bots.

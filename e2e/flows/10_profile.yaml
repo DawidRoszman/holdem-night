@@ -41,6 +41,8 @@ env:
     id: "bank-amount"
     text: "1,000"
 - tapOn: "Add bot"
+# the host deals the first hand
+- tapOn: "Start game"
 - extendedWaitUntil:
     visible: "Your turn"
     timeout: 15000
