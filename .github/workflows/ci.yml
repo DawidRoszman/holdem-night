@@ -14,6 +14,11 @@ concurrency:
 permissions:
   contents: read
 
+# an explicit bash runs with -eo pipefail, so `run.sh | tee` fails when run.sh does
+defaults:
+  run:
+    shell: bash
+
 jobs:
   unit:
     name: Unit tests (${{ matrix.service }})
