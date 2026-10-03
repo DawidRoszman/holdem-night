@@ -50,6 +50,7 @@ function accountsClient(baseUrl, internalKey, { timeoutMs = 3000 } = {}) {
     session: (token) => call('/session', { token }),
     debit: (userId, amount, note) => call('/debit', { userId, amount, note }),
     credit: (userId, amount, note) => call('/credit', { userId, amount, note }),
+    settle: (userId, amount, note, game) => call('/game', { userId, amount, note, game }),
   };
 }
 

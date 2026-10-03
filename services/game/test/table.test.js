@@ -322,7 +322,7 @@ test('a busted human stays seated, sits out, and can rebuy', async () => {
 });
 
 test('busted bots are cleared between hands, not the moment they lose', async () => {
-  const table = makeTable(['a'], { scores: { a: 2 } });
+  const table = makeTable(['a'], { scores: { a: 2 }, mode: 'bot' });
   table.addPlayer({ id: 'bot', name: 'Bot', isBot: true });
   table.findPlayer('bot').chips = 50;
   await table.startHand();
@@ -394,4 +394,35 @@ test('a rebuy is for the amount the player sat down with', async () => {
   table.rebuy('b');
   assert.equal(table.findPlayer('b').chips, 300);
   assert.equal(table.view('b').you.buyIn, 300);
+});
+
+test('normal tables are humans only; practice tables take bots', () => {
+  const normal = makeTable(['a']);
+  assert.equal(normal.mode, 'normal');
+  assert.throws(() => normal.addPlayer({ id: 'bot', name: 'Bot', isBot: true }), /practice tables/);
+  const practice = makeTable(['a'], { mode: 'bot' });
+  practice.addPlayer({ id: 'bot', name: 'Bot', isBot: true });
+  assert.equal(practice.summary().mode, 'bot');
+  assert.equal(practice.view('a').mode, 'bot');
+  assert.throws(() => makeTable([], { mode: 'ranked' }), /Unknown table type/);
+});
+
+test('each player keeps hands played, hands won, biggest win and total buy-in', async () => {
+  const table = makeTable(['a', 'b'], { scores: { a: 2, b: 1 } });
+  await table.startHand();
+  await table.act(actor(table), 'allin');
+  await table.act(actor(table), 'call');
+  const [a, b] = ['a', 'b'].map((id) => table.findPlayer(id));
+  assert.deepEqual([a.handsPlayed, a.handsWon, a.biggestWin], [1, 1, 1000]);
+  assert.deepEqual([b.handsPlayed, b.handsWon, b.biggestWin], [1, 0, 0]);
+  table.rebuy('b');
+  assert.equal(b.totalBuyIn, 2000);
+});
+
+test('a hand cancelled by the evaluator does not count towards the stats', async () => {
+  const table = makeTable(['a', 'b'], { rankHands: async () => { throw new Error('down'); } });
+  await table.startHand();
+  await table.act(actor(table), 'allin');
+  await table.act(actor(table), 'call');
+  assert.equal(table.findPlayer('a').handsPlayed, 0);
 });

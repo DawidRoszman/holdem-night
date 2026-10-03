@@ -5,6 +5,8 @@ const { describeScore, explainWin } = require('./describe');
 
 const BETTING_STAGES = ['preflop', 'flop', 'turn', 'river'];
 const LOG_LIMIT = 30;
+// 'normal' tables are humans only and play for bank chips; 'bot' tables are free practice
+const MODES = ['normal', 'bot'];
 
 function compareScores(a, b) {
   for (let i = 0; i < Math.max(a.length, b.length); i++) {
@@ -22,11 +24,15 @@ class GameError extends Error {}
  * `rankHands(board, [{id, hole}])` is async and must resolve to
  * `{ results: [{ id, score: number[], name }] }` — in production it calls the
  * evaluator microservice.
+ *
+ * `mode` is 'normal' (humans only, chips come from the players' banks) or
+ * 'bot' (practice: bots allowed, chips are free and never reach a bank).
  */
 class Table {
   constructor({
     id,
     name,
+    mode = 'normal',
     smallBlind = 10,
     bigBlind = 20,
     startingChips = 1000,
@@ -36,8 +42,10 @@ class Table {
     onEvent = () => {},
   }) {
     if (typeof rankHands !== 'function') throw new Error('rankHands is required');
+    if (!MODES.includes(mode)) throw new GameError('Unknown table type');
     this.id = id;
     this.name = name;
+    this.mode = mode;
     this.smallBlind = smallBlind;
     this.bigBlind = bigBlind;
     this.startingChips = startingChips;
@@ -89,7 +97,12 @@ class Table {
     return amount;
   }
 
-  addPlayer({ id, name, isBot = false, chips = this.startingChips, userId = null }) {
+  get isPractice() {
+    return this.mode === 'bot';
+  }
+
+  addPlayer({ id, name, isBot = false, chips = this.startingChips, userId = null, joinedAt = Date.now() }) {
+    if (isBot && !this.isPractice) throw new GameError('Bots can only play at practice tables');
     if (this.findPlayer(id)) throw new GameError('Already seated at this table');
     const seat = this.seats.indexOf(null);
     if (seat === -1) throw new GameError('Table is full');
@@ -109,6 +122,12 @@ class Table {
       allIn: false,
       acted: false,
       leaving: false,
+      // for the player's game history
+      joinedAt,
+      totalBuyIn: chips,
+      handsPlayed: 0,
+      handsWon: 0,
+      biggestWin: 0,
     };
     this.addLog(`${name} sits down at seat ${seat + 1}`);
     return seat;
@@ -175,6 +194,7 @@ class Table {
   rebuy(id) {
     const p = this.checkRebuy(id);
     p.chips = p.buyIn;
+    p.totalBuyIn += p.buyIn;
     this.addLog(`${p.name} rebuys for ${p.buyIn}`);
   }
 
@@ -509,6 +529,12 @@ class Table {
       p.totalBet = 0;
       if (!p.inHand) continue;
       deltas[p.id] = p.chips - p.startChips;
+      // a cancelled hand (bets returned) doesn't count
+      if (!result.error) {
+        p.handsPlayed += 1;
+        if (deltas[p.id] > 0) p.handsWon += 1;
+        p.biggestWin = Math.max(p.biggestWin, deltas[p.id]);
+      }
       if (p.chips === 0 && !p.leaving) {
         busted.push({ id: p.id, name: p.name });
         this.addLog(`${p.name} is out of chips`);
@@ -532,6 +558,7 @@ class Table {
     return {
       id: this.id,
       name: this.name,
+      mode: this.mode,
       stage: this.stage,
       handNumber: this.handNumber,
       board: this.board,
@@ -574,6 +601,7 @@ class Table {
     return {
       id: this.id,
       name: this.name,
+      mode: this.mode,
       players: this.players.length,
       maxPlayers: this.maxPlayers,
       stage: this.stage,
@@ -585,4 +613,4 @@ class Table {
   }
 }
 
-module.exports = { Table, GameError, compareScores };
+module.exports = { Table, GameError, compareScores, MODES };

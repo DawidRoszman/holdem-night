@@ -122,7 +122,7 @@ test('joining a missing table or acting without a table reports an error', async
 test('bots play hands automatically against a human', async () => {
   const { lobby, last, all } = setup({ nextHandDelayMs: 1000 });
   await connectNamed(lobby, 'c1', 'Alice');
-  await lobby.handle('c1', { type: 'createTable', name: 'Bots' });
+  await lobby.handle('c1', { type: 'createTable', name: 'Bots', mode: 'bot' });
   await lobby.handle('c1', { type: 'addBot' });
   await lobby.handle('c1', { type: 'addBot' });
   const finished = () => all('c1', 'state').find((m) => m.table.lastResult);
@@ -156,7 +156,7 @@ test('turn timeout folds an idle player facing a bet', async () => {
 test('leaving returns the player to the lobby and empty tables are removed', async () => {
   const { lobby, last, all } = setup();
   await connectNamed(lobby, 'c1', 'Alice');
-  await lobby.handle('c1', { type: 'createTable', name: 'T' });
+  await lobby.handle('c1', { type: 'createTable', name: 'T', mode: 'bot' });
   await lobby.handle('c1', { type: 'addBot' });
   await lobby.handle('c1', { type: 'leaveTable' });
   assert.equal(all('c1', 'left').length, 1);
@@ -184,7 +184,7 @@ test('a table cannot take more players than seats', async () => {
   const { lobby, last } = setup({ tableOptions: { maxPlayers: 2 } });
   await connectNamed(lobby, 'c1', 'Alice');
   await connectNamed(lobby, 'c2', 'Bob');
-  await lobby.handle('c1', { type: 'createTable', name: 'T' });
+  await lobby.handle('c1', { type: 'createTable', name: 'T', mode: 'bot' });
   await lobby.handle('c1', { type: 'addBot' });
   await lobby.handle('c1', { type: 'addBot' });
   assert.match(last('c1', 'error').message, /full/);
@@ -196,7 +196,7 @@ test('a table cannot take more players than seats', async () => {
 test('a player who leaves mid-hand stops receiving that table\'s state', async () => {
   const { lobby, inbox, last } = setup();
   await connectNamed(lobby, 'c1', 'Alice');
-  await lobby.handle('c1', { type: 'createTable', name: 'T' });
+  await lobby.handle('c1', { type: 'createTable', name: 'T', mode: 'bot' });
   await lobby.handle('c1', { type: 'addBot' });
   await lobby.handle('c1', { type: 'addBot' });
   await until(() => last('c1', 'state').table.stage === 'preflop');
@@ -255,6 +255,11 @@ function fakeBank(balances) {
     bank.balances.set(userId, bank.balances.get(userId) + amount);
     bank.moves.push([userId, amount, note]);
     return { chips: bank.balances.get(userId) };
+  };
+  bank.games = [];
+  bank.settle = async (userId, amount, note, game) => {
+    bank.games.push([userId, game]);
+    return amount > 0 ? bank.credit(userId, amount, note) : { chips: bank.balances.get(userId) };
   };
   return bank;
 }
@@ -410,5 +415,69 @@ test('disconnecting while a buy-in is at the bank pays it straight back', async 
   await until(() => bank.balances.get('ann') === 1000);
   assert.equal(lobby.tables.size, 0);
   assert.equal(lobby.clients.size, 0);
+  lobby.shutdown();
+});
+
+test('bots can only join practice tables', async () => {
+  const { lobby, last } = setup();
+  await connectNamed(lobby, 'c1', 'Ann');
+  await lobby.handle('c1', { type: 'createTable', name: 'Real' });
+  assert.equal(last('c1', 'state').table.mode, 'normal');
+  await lobby.handle('c1', { type: 'addBot' });
+  assert.equal(last('c1', 'error').message, 'Bots can only play at practice tables');
+
+  await lobby.handle('c1', { type: 'leaveTable' });
+  await lobby.handle('c1', { type: 'createTable', name: 'Odd', mode: 'ranked' });
+  assert.equal(last('c1', 'error').message, 'Choose a normal or a practice table');
+  await lobby.handle('c1', { type: 'createTable', name: 'Practice', mode: 'bot' });
+  await lobby.handle('c1', { type: 'addBot' });
+  assert.equal(last('c1', 'state').table.seats[1].isBot, true);
+  lobby.shutdown();
+});
+
+test('practice tables never touch the bank but still record the game', async () => {
+  const bank = fakeBank({ ann: 50 });
+  const { lobby, last } = setup({ accounts: bank, nextHandDelayMs: 20 });
+  await connectUser(lobby, 'c1', 'ann');
+  // the bank can't cover a 1,000 buy-in, but practice chips are free
+  await lobby.handle('c1', { type: 'createTable', name: 'Practice', mode: 'bot' });
+  assert.equal(last('c1', 'error'), undefined);
+  await lobby.handle('c1', { type: 'addBot' });
+  await until(() => last('c1', 'state').table.you?.legal);
+  await lobby.handle('c1', { type: 'action', action: 'fold' });
+  await lobby.handle('c1', { type: 'leaveTable' });
+  await until(() => bank.games.length === 1);
+
+  assert.deepEqual(bank.moves, []);
+  assert.equal(bank.balances.get('ann'), 50);
+  const [userId, game] = bank.games[0];
+  assert.equal(userId, 'ann');
+  assert.equal(game.mode, 'bot');
+  assert.equal(game.tableName, 'Practice');
+  assert.equal(game.buyIn, 1000);
+  assert.deepEqual([game.hands, game.handsWon], [1, 0]);
+  lobby.shutdown();
+});
+
+test('leaving a normal table pays the stack back together with the game record', async () => {
+  const bank = fakeBank({ ann: 1000, bob: 1000 });
+  const { lobby, last } = setup({ accounts: bank, nextHandDelayMs: 50 });
+  await connectUser(lobby, 'c1', 'ann');
+  await connectUser(lobby, 'c2', 'bob');
+  await lobby.handle('c1', { type: 'createTable', name: 'Duel', buyIn: 500 });
+  await lobby.handle('c2', { type: 'joinTable', tableId: last('c1', 'state').table.id, buyIn: 500 });
+  await until(() => last('c1', 'state').table.you?.legal);
+  await lobby.handle('c1', { type: 'action', action: 'fold' }); // Ann is small blind heads-up: -10
+  await lobby.handle('c2', { type: 'leaveTable' });
+  await lobby.handle('c1', { type: 'leaveTable' });
+  await until(() => bank.games.length === 2);
+
+  const games = Object.fromEntries(bank.games);
+  assert.deepEqual(games.bob, {
+    mode: 'normal', tableName: 'Duel', buyIn: 500, cashOut: 510, hands: 1, handsWon: 1, biggestWin: 10,
+    startedAt: games.bob.startedAt,
+  });
+  assert.deepEqual([games.ann.cashOut, games.ann.handsWon, games.ann.biggestWin], [490, 0, 0]);
+  assert.equal(bank.balances.get('bob'), 1010);
   lobby.shutdown();
 });

@@ -1,7 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
-const { Table, GameError } = require('./table');
+const { Table, GameError, MODES } = require('./table');
 const bot = require('./bot');
 
 const NAME_MAX = 20;
@@ -22,6 +22,10 @@ const USER_FACING = new Set([400, 401, 409]);
  * With `accounts` (see accountsClient in server.js) players log in with a
  * session token, and table chips are bought from and paid back to their bank.
  * Without it players just pick a name and every seat gets free chips.
+ *
+ * Tables are 'normal' (humans only, played for bank chips) or 'bot' (practice
+ * with bots, free chips). When a player leaves, the game is reported to the
+ * accounts service for their history; only normal games pay chips back.
  */
 class Lobby {
   constructor({
@@ -87,7 +91,7 @@ class Lobby {
           this.send(clientId, { type: 'tables', tables: this.tableList() });
           break;
         case 'createTable':
-          await this.createTable(client, msg.name, msg.buyIn);
+          await this.createTable(client, msg.name, msg.buyIn, msg.mode);
           break;
         case 'joinTable':
           await this.joinTable(client, msg.tableId, msg.buyIn);
@@ -159,15 +163,37 @@ class Lobby {
   // Pays chips back to a player's bank; failures are logged, never thrown at the table.
   deposit(userId, amount, note) {
     if (!this.accounts || !userId || amount <= 0) return Promise.resolve();
-    const job = this.accounts
-      .credit(userId, amount, note)
+    return this.bankJob(userId, this.accounts.credit(userId, amount, note), `return ${amount} chips (${note})`);
+  }
+
+  // A player is done at a table: pays their stake back (normal tables only)
+  // and records the game for their profile, in one call to the bank.
+  settle(table, player, stake, note) {
+    if (!this.accounts || !player.userId) return Promise.resolve();
+    const amount = table.isPractice ? 0 : stake;
+    const game = {
+      mode: table.mode,
+      tableName: table.name,
+      buyIn: player.totalBuyIn,
+      cashOut: stake,
+      hands: player.handsPlayed,
+      handsWon: player.handsWon,
+      biggestWin: player.biggestWin,
+      startedAt: player.joinedAt,
+    };
+    return this.bankJob(player.userId, this.accounts.settle(player.userId, amount, note, game), `settle a game (${note})`);
+  }
+
+  // Tracks a bank call that must finish before shutdown and tells the user's open connections the new balance.
+  bankJob(userId, request, what) {
+    const job = request
       .then(({ chips }) => {
         // tell every open connection of this user, e.g. a second tab in the lobby
         for (const c of this.clients.values()) {
           if (c.userId === userId) this.send(c.id, { type: 'account', chips });
         }
       })
-      .catch((err) => console.error(`could not return ${amount} chips to user ${userId} (${note})`, err))
+      .catch((err) => console.error(`could not ${what} for user ${userId}`, err))
       .finally(() => this.pending.delete(job));
     this.pending.add(job);
     return job;
@@ -192,13 +218,16 @@ class Lobby {
     return entry.queue;
   }
 
-  async createTable(client, rawName, buyIn) {
+  async createTable(client, rawName, buyIn, rawMode) {
     if (client.tableId) throw new GameError('Leave your current table first');
+    const mode = rawMode ?? 'normal';
+    if (!MODES.includes(mode)) throw new GameError('Choose a normal or a practice table');
     const id = this.newId().slice(0, 8);
     const entry = { table: null, queue: Promise.resolve(), timers: {}, bots: 0 };
     entry.table = new Table({
       id,
       name: cleanName(rawName, `${client.name}'s table`),
+      mode,
       rankHands: this.rankHands,
       onEvent: (event, player) => this.onTableEvent(entry, event, player),
       ...this.tableOptions,
@@ -223,14 +252,16 @@ class Lobby {
       throw new GameError('You are already playing at a table in another window');
     }
     const chips = table.buyInAmount(rawBuyIn);
-    await this.withdraw(client, chips, `Buy-in at ${table.name}`);
+    // practice chips are free
+    const paid = !table.isPractice;
+    if (paid) await this.withdraw(client, chips, `Buy-in at ${table.name}`);
     try {
       // the table may have filled up or closed, or the player gone, while the bank was busy
       if (!this.tables.has(tableId)) throw new GameError('Table not found');
       if (!this.clients.has(client.id)) throw new GameError('Disconnected');
       table.addPlayer({ id: client.id, name: client.name, chips, userId: client.userId });
     } catch (err) {
-      await this.deposit(client.userId, chips, `Refund for ${table.name}`);
+      if (paid) await this.deposit(client.userId, chips, `Refund for ${table.name}`);
       throw err;
     }
     client.tableId = tableId;
@@ -258,6 +289,7 @@ class Lobby {
   async addBot(client) {
     const entry = this.tables.get(client.tableId);
     if (!entry) throw new GameError('Join a table first');
+    if (!entry.table.isPractice) throw new GameError('Bots can only play at practice tables');
     if (entry.table.isFull) throw new GameError('Table is full');
     const name = `${MAX_BOTS_NAMES[entry.bots % MAX_BOTS_NAMES.length]} (bot)`;
     entry.bots += 1;
@@ -269,12 +301,13 @@ class Lobby {
     const entry = this.tables.get(client.tableId);
     if (!entry) throw new GameError('Join a table first');
     const { buyIn } = entry.table.checkRebuy(client.id);
-    await this.withdraw(client, buyIn, `Rebuy at ${entry.table.name}`);
+    const paid = !entry.table.isPractice;
+    if (paid) await this.withdraw(client, buyIn, `Rebuy at ${entry.table.name}`);
     try {
       entry.table.rebuy(client.id);
     } catch (err) {
       // the player left while the bank was busy
-      await this.deposit(client.userId, buyIn, `Refund for ${entry.table.name}`);
+      if (paid) await this.deposit(client.userId, buyIn, `Refund for ${entry.table.name}`);
       throw err;
     }
     this.afterChange(entry);
@@ -297,8 +330,8 @@ class Lobby {
 
   onTableEvent(entry, event, player) {
     if (event !== 'removed' || player.isBot) return;
-    // whatever is left in front of the player goes back to their bank
-    this.deposit(player.userId, player.chips, `Cash-out from ${entry.table.name}`);
+    // whatever is left in front of the player goes back to their bank, and the game into their history
+    this.settle(entry.table, player, player.chips, `Cash-out from ${entry.table.name}`);
     const client = this.clients.get(player.id);
     if (client && client.tableId === entry.table.id) {
       client.tableId = null;
@@ -395,7 +428,7 @@ class Lobby {
       for (const p of table.players) {
         if (p.isBot) continue;
         const stake = p.chips + (table.inProgress ? p.totalBet : 0);
-        this.deposit(p.userId, stake, `Cash-out from ${table.name} (server stopped)`);
+        this.settle(table, p, stake, `Cash-out from ${table.name} (server stopped)`);
       }
     }
     await Promise.allSettled([...this.pending]);
