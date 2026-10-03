@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('http');
 const WebSocket = require('ws');
-const { createGameServer, evaluatorClient, accountsClient } = require('../src/server');
+const { createGameServer, evaluatorClient, accountsClient, SESSION_COOKIE } = require('../src/server');
 
 const rankHands = async (board, players) => ({
   results: players.map((p) => ({ id: p.id, score: [1], name: 'High Card' })),
@@ -22,8 +22,8 @@ test.before(async () => {
 test.after(() => new Promise((resolve) => game.server.close(resolve)));
 
 // Minimal client that records messages and can wait for a matching one.
-function connect() {
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+function connect({ headers = {}, to = port } = {}) {
+  const ws = new WebSocket(`ws://127.0.0.1:${to}/ws`, { headers });
   const messages = [];
   const waiters = [];
   ws.on('message', (data) => {
@@ -157,4 +157,34 @@ test('accountsClient calls the internal API with the shared key and surfaces err
     ['/internal/debit', 'sekret', { userId: 7, amount: 5000, note: 'Buy-in' }],
   ]);
   stub.close();
+});
+
+test('the browser logs in with its session cookie, and other sites cannot open a socket', async (t) => {
+  const accounts = {
+    session: async (token) => {
+      if (token !== 'good-token') throw Object.assign(new Error('Your session has expired, please log in again'), { status: 401 });
+      return { id: 7, username: 'Ann', chips: 500 };
+    },
+  };
+  const g = createGameServer({ rankHands, accounts, lobbyOptions: { turnTimeoutMs: 0 } });
+  await new Promise((resolve) => g.server.listen(0, resolve));
+  t.after(() => new Promise((resolve) => g.server.close(resolve)));
+  const to = g.server.address().port;
+
+  // same site (any port: a proxy may forward Host without it), with the session cookie
+  const ann = await connect({ to, headers: { Origin: 'http://127.0.0.1:8090', Cookie: `other=1; ${SESSION_COOKIE}=good-token` } });
+  ann.send({ type: 'hello' });
+  assert.equal((await ann.next((m) => m.type === 'welcome')).name, 'Ann');
+  ann.close();
+
+  const anon = await connect({ to });
+  anon.send({ type: 'hello' });
+  assert.match((await anon.next((m) => m.type === 'authError')).message, /log in again/);
+  anon.close();
+
+  // a page on another site gets no socket, cookie or not
+  await assert.rejects(
+    connect({ to, headers: { Origin: 'https://evil.example', Cookie: `${SESSION_COOKIE}=good-token` } }),
+    /Unexpected server response: 401/,
+  );
 });

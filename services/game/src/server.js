@@ -6,6 +6,29 @@ const { WebSocketServer } = require('ws');
 const { Lobby } = require('./lobby');
 
 const MAX_MESSAGE_BYTES = 4 * 1024;
+// set by the accounts service at login (HttpOnly), and sent by the browser with the WebSocket handshake
+const SESSION_COOKIE = 'holdem_session';
+
+function cookie(req, name) {
+  for (const part of String(req.headers.cookie || '').split(';')) {
+    const eq = part.indexOf('=');
+    if (eq > 0 && part.slice(0, eq).trim() === name) return decodeURIComponent(part.slice(eq + 1).trim());
+  }
+  return null;
+}
+
+// Browsers always send Origin with a WebSocket handshake. A page on another site must not open a
+// socket here (with the player's cookie); clients without an Origin, like scripts, are let in.
+function sameSite(req) {
+  const { origin } = req.headers;
+  if (!origin) return true;
+  try {
+    // hostnames only: a proxy may forward Host without the port
+    return new URL(origin).hostname === new URL(`http://${req.headers.host}`).hostname;
+  } catch {
+    return false;
+  }
+}
 
 // Calls the evaluator microservice to rank the players' hands at showdown.
 function evaluatorClient(baseUrl, { timeoutMs = 3000, retries = 1 } = {}) {
@@ -76,12 +99,17 @@ function createGameServer({ rankHands, accounts = null, lobbyOptions = {} } = {}
     res.end(JSON.stringify({ error: 'Not found' }));
   });
 
-  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: MAX_MESSAGE_BYTES });
+  const wss = new WebSocketServer({
+    server,
+    path: '/ws',
+    maxPayload: MAX_MESSAGE_BYTES,
+    verifyClient: ({ req }) => sameSite(req),
+  });
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws, req) => {
     const clientId = crypto.randomUUID();
     sockets.set(clientId, ws);
-    lobby.connect(clientId);
+    lobby.connect(clientId, { token: cookie(req, SESSION_COOKIE) });
     ws.isAlive = true;
     ws.on('pong', () => {
       ws.isAlive = true;
@@ -154,4 +182,4 @@ if (require.main === module) {
   process.on('SIGINT', stop);
 }
 
-module.exports = { createGameServer, evaluatorClient, accountsClient };
+module.exports = { createGameServer, evaluatorClient, accountsClient, SESSION_COOKIE };

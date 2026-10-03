@@ -56,8 +56,11 @@ class Lobby {
 
   // ---------------------------------------------------------------- clients
 
-  connect(clientId) {
-    this.clients.set(clientId, { id: clientId, name: null, userId: null, tableId: null, inbox: Promise.resolve() });
+  // `token`: the session from the connection's cookie, used when hello carries none
+  connect(clientId, { token = null } = {}) {
+    this.clients.set(clientId, {
+      id: clientId, name: null, userId: null, tableId: null, token, inbox: Promise.resolve(),
+    });
   }
 
   // Runs after anything the client sent before closing, e.g. a buy-in still at the bank.
@@ -190,7 +193,8 @@ class Lobby {
     if (this.accounts) {
       let user;
       try {
-        user = await this.accounts.session(String(msg.token || ''));
+        // the browser's session is the cookie it connected with; scripts may send a token instead
+        user = await this.accounts.session(String(msg.token || client.token || ''));
       } catch (err) {
         if (err.status === 401) {
           this.send(client.id, { type: 'authError', message: err.message });

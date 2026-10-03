@@ -669,3 +669,15 @@ test('a seat is never handed to a connection that has already closed', async () 
   assert.equal(lobby.clients.size, 0);
   lobby.shutdown();
 });
+
+test('the session can come with the connection (the browser cookie) instead of the hello', async () => {
+  const bank = fakeBank({ ann: 1000 });
+  const { lobby, last } = setup({ accounts: bank });
+  lobby.connect('c1', { token: 'ann' });
+  await lobby.handle('c1', { type: 'hello' });
+  assert.equal(last('c1', 'welcome').name, 'ANN');
+  lobby.connect('c2');
+  await lobby.handle('c2', { type: 'hello' });
+  assert.match(last('c2', 'authError').message, /log in again/);
+  lobby.shutdown();
+});
