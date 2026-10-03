@@ -66,11 +66,28 @@ class Store {
         note       TEXT,
         created_at INTEGER NOT NULL
       );
+      CREATE INDEX IF NOT EXISTS transactions_user ON transactions(user_id, id);
+      -- one row per sitting at a table; only 'normal' games move chips
+      CREATE TABLE IF NOT EXISTS games (
+        id          INTEGER PRIMARY KEY,
+        user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        mode        TEXT NOT NULL CHECK (mode IN ('normal', 'bot')),
+        table_name  TEXT NOT NULL,
+        buy_in      INTEGER NOT NULL,
+        cash_out    INTEGER NOT NULL,
+        hands       INTEGER NOT NULL,
+        hands_won   INTEGER NOT NULL,
+        biggest_win INTEGER NOT NULL,
+        started_at  INTEGER NOT NULL,
+        ended_at    INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS games_user ON games(user_id, id);
     `);
     this.sql = {
       insertUser: this.db.prepare('INSERT INTO users (username, password_hash, chips, created_at) VALUES (?, ?, 0, ?)'),
       userByName: this.db.prepare('SELECT * FROM users WHERE username = ?'),
       userById: this.db.prepare('SELECT id, username, chips FROM users WHERE id = ?'),
+      createdAt: this.db.prepare('SELECT created_at AS createdAt FROM users WHERE id = ?'),
       insertSession: this.db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)'),
       session: this.db.prepare(`
         SELECT u.id, u.username, u.chips FROM sessions s JOIN users u ON u.id = s.user_id
@@ -85,6 +102,38 @@ class Store {
       history: this.db.prepare(
         'SELECT kind, amount, balance, note, created_at AS createdAt FROM transactions WHERE user_id = ? ORDER BY id DESC LIMIT ?',
       ),
+      insertGame: this.db.prepare(`
+        INSERT INTO games (user_id, mode, table_name, buy_in, cash_out, hands, hands_won, biggest_win, started_at, ended_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+      games: this.db.prepare(`
+        SELECT id, mode, table_name AS tableName, buy_in AS buyIn, cash_out AS cashOut, cash_out - buy_in AS net,
+               hands, hands_won AS handsWon, biggest_win AS biggestWin, started_at AS startedAt, ended_at AS endedAt
+        FROM games WHERE user_id = ? ORDER BY id DESC LIMIT ?`),
+      moneyStats: this.db.prepare(`
+        SELECT COUNT(*) AS games,
+               COALESCE(SUM(hands), 0) AS hands,
+               COALESCE(SUM(hands_won), 0) AS handsWon,
+               COALESCE(SUM(MAX(cash_out - buy_in, 0)), 0) AS earned,
+               COALESCE(SUM(MAX(buy_in - cash_out, 0)), 0) AS lost,
+               COALESCE(MAX(biggest_win), 0) AS biggestWin,
+               MAX(cash_out - buy_in) AS bestGame,
+               MIN(cash_out - buy_in) AS worstGame
+        FROM games WHERE user_id = ? AND mode = 'normal'`),
+      botStats: this.db.prepare(`
+        SELECT COUNT(*) AS games, COALESCE(SUM(hands), 0) AS hands, COALESCE(SUM(hands_won), 0) AS handsWon
+        FROM games WHERE user_id = ? AND mode = 'bot'`),
+      deposited: this.db.prepare(
+        "SELECT COALESCE(SUM(amount), 0) AS total FROM transactions WHERE user_id = ? AND kind IN ('welcome', 'purchase')",
+      ),
+      deposits: this.db.prepare(`
+        SELECT kind, amount, balance, note, created_at AS createdAt FROM transactions
+        WHERE user_id = ? AND kind IN ('welcome', 'purchase') ORDER BY id DESC LIMIT ?`),
+      // the most recent balances, oldest first
+      timeline: this.db.prepare(`
+        SELECT * FROM (
+          SELECT id, kind, amount, balance, created_at AS createdAt FROM transactions
+          WHERE user_id = ? ORDER BY id DESC LIMIT ?
+        ) ORDER BY id`),
     };
   }
 
@@ -156,6 +205,51 @@ class Store {
 
   history(userId, limit = 20) {
     return this.sql.history.all(userId, limit);
+  }
+
+  /**
+   * Ends a player's sitting at a table: pays `payout` chips back to the bank
+   * (normal games only; practice games against bots never touch the bank) and
+   * records the game, in one database transaction. Returns the bank balance.
+   */
+  settleGame(userId, payout, game, note = null) {
+    if (!Number.isSafeInteger(payout) || payout < 0) throw new AccountError(400, 'Payout must be a whole number');
+    if (game.mode === 'bot' && payout > 0) throw new AccountError(400, 'Practice games do not pay out');
+    return this.transaction(() => {
+      const chips = payout > 0 ? this.applyChange(userId, payout, 'cash-out', note) : this.user(userId)?.chips;
+      if (chips === undefined) throw new AccountError(404, 'No such user');
+      // sitting down and leaving before a hand was dealt is not a game
+      if (game.hands > 0) {
+        this.sql.insertGame.run(
+          userId, game.mode, game.tableName, game.buyIn, game.cashOut,
+          game.hands, game.handsWon, game.biggestWin, game.startedAt, this.now(),
+        );
+      }
+      return chips;
+    });
+  }
+
+  games(userId, limit = 50) {
+    return this.sql.games.all(userId, limit);
+  }
+
+  // Everything the profile page shows: lifetime stats, bank timeline, games and deposits.
+  profile(userId, { games = 50, timeline = 500, deposits = 50 } = {}) {
+    const user = this.user(userId);
+    if (!user) throw new AccountError(404, 'No such user');
+    const money = { ...this.sql.moneyStats.get(userId) };
+    money.net = money.earned - money.lost;
+    return {
+      user: { username: user.username, chips: user.chips, createdAt: this.sql.createdAt.get(userId).createdAt },
+      stats: {
+        normal: money,
+        bot: { ...this.sql.botStats.get(userId) },
+        deposited: this.sql.deposited.get(userId).total,
+      },
+      timeline: this.sql.timeline.all(userId, timeline).map(({ id, ...row }) => row),
+      games: this.games(userId, games),
+      deposits: this.sql.deposits.all(userId, deposits),
+    };
   }
 
   close() {

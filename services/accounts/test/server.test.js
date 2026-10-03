@@ -110,6 +110,30 @@ test('the game service resolves sessions and moves chips to and from tables', as
   assert.deepEqual(credit.body, { chips: 1550 });
 });
 
+test('the game service settles games and the player sees them on their profile', async (t) => {
+  const { server, call } = await start();
+  t.after(() => server.close());
+  const { body } = await call('POST', '/register', { body: { username: 'Ann', password: 'secret1' } });
+  const { id: userId } = (await call('POST', '/internal/session', { key: KEY, body: { token: body.token } })).body;
+  await call('POST', '/internal/debit', { key: KEY, body: { userId, amount: 1000 } });
+
+  const game = { mode: 'normal', tableName: 'Table A', buyIn: 1000, cashOut: 1250, hands: 4, handsWon: 1, biggestWin: 300, startedAt: 5 };
+  const settled = await call('POST', '/internal/game', { key: KEY, body: { userId, amount: 1250, note: 'Cash-out', game } });
+  assert.deepEqual(settled.body, { chips: 1250 });
+  for (const bad of [{ ...game, mode: 'ranked' }, { ...game, hands: -1 }, { ...game, handsWon: 9 }, null]) {
+    assert.equal((await call('POST', '/internal/game', { key: KEY, body: { userId, amount: 0, game: bad } })).status, 400);
+  }
+  assert.equal((await call('POST', '/internal/game', { body: { userId, amount: 5, game } })).status, 403);
+
+  assert.equal((await call('GET', '/profile')).status, 401);
+  const profile = await call('GET', '/profile', { token: body.token });
+  assert.equal(profile.status, 200);
+  assert.equal(profile.body.user.chips, 1250);
+  assert.equal(profile.body.stats.normal.earned, 250);
+  assert.deepEqual(profile.body.games.map((g) => [g.tableName, g.net]), [['Table A', 250]]);
+  assert.deepEqual(profile.body.timeline.map((p) => p.kind), ['welcome', 'buy-in', 'cash-out']);
+});
+
 test('unknown routes and bad JSON are client errors', async (t) => {
   const { server, call } = await start();
   t.after(() => server.close());

@@ -66,11 +66,25 @@ function credentials(body) {
 
 const publicUser = (u) => ({ username: u.username, chips: u.chips });
 
+const GAME_MODES = new Set(['normal', 'bot']);
+const count = (v) => Number.isSafeInteger(v) && v >= 0;
+
+// A finished game as reported by the game service.
+function gameRecord(raw) {
+  const g = raw && typeof raw === 'object' ? raw : {};
+  const ints = ['buyIn', 'cashOut', 'hands', 'handsWon', 'biggestWin', 'startedAt'];
+  if (!GAME_MODES.has(g.mode) || !ints.every((k) => count(g[k])) || g.handsWon > g.hands) {
+    throw new AccountError(400, 'Invalid game record');
+  }
+  const tableName = String(g.tableName || '').slice(0, 40) || 'Table';
+  return { ...Object.fromEntries(ints.map((k) => [k, g[k]])), mode: g.mode, tableName };
+}
+
 /**
  * Public API (proxied by the web gateway at /api/accounts/):
- *   POST /register, POST /login, POST /logout, GET /me, POST /buy
+ *   POST /register, POST /login, POST /logout, GET /me, GET /history, GET /profile, POST /buy
  * Internal API for the game service (requires X-Internal-Key, never proxied):
- *   POST /internal/session, POST /internal/debit, POST /internal/credit
+ *   POST /internal/session, POST /internal/debit, POST /internal/credit, POST /internal/game
  */
 function createServer({ store = new Store(), internalKey, now = () => Date.now() } = {}) {
   if (!internalKey) throw new Error('internalKey is required');
@@ -137,6 +151,8 @@ function createServer({ store = new Store(), internalKey, now = () => Date.now()
 
     'GET /history': (req) => [200, { transactions: store.history(requireUser(req).id) }],
 
+    'GET /profile': (req) => [200, store.profile(requireUser(req).id)],
+
     // Play money: buying a pack just credits it, there is no payment step.
     'POST /buy': async (req) => {
       const user = requireUser(req);
@@ -161,6 +177,13 @@ function createServer({ store = new Store(), internalKey, now = () => Date.now()
       const { userId, amount, note } = await readJson(req);
       if (!Number.isSafeInteger(amount) || amount <= 0) throw new AccountError(400, 'Amount must be positive');
       return [200, { chips: store.changeChips(Number(userId), amount, 'cash-out', note) }];
+    },
+
+    // A player left a table: pay their stack back (normal games) and record the game.
+    'POST /internal/game': async (req) => {
+      const { userId, amount, note, game } = await readJson(req);
+      if (!count(amount)) throw new AccountError(400, 'Amount must be a whole number');
+      return [200, { chips: store.settleGame(Number(userId), amount, gameRecord(game), note) }];
     },
   };
 
