@@ -1,0 +1,26 @@
+url: ${APP_URL}
+name: Lobby - log in, create and leave a table
+tags:
+  - smoke
+env:
+  APP_URL: http://localhost:8090
+  PLAYER_NAME: Lobby Larry
+---
+- runFlow:
+    file: common/login.yaml
+    env:
+      PLAYER_NAME: ${PLAYER_NAME}
+- assertVisible: "Open tables"
+- tapOn:
+    id: "table-name-input"
+- inputText: "Larry Lounge"
+- tapOn: "Create table"
+- assertVisible:
+    id: "table-title"
+    text: "Larry Lounge"
+- assertVisible: "Waiting for players…"
+- assertVisible: "Lobby Larry"
+- assertVisible: "Pot: 0"
+- tapOn: "Leave table"
+- assertVisible: "Welcome, Lobby Larry"
+- assertNotVisible: "Larry Lounge"

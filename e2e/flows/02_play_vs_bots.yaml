@@ -1,0 +1,38 @@
+url: ${APP_URL}
+name: Gameplay - play a full hand to showdown against bots
+tags:
+  - gameplay
+env:
+  APP_URL: http://localhost:8090
+  PLAYER_NAME: Bot Slayer
+---
+- runFlow:
+    file: common/login.yaml
+    env:
+      PLAYER_NAME: ${PLAYER_NAME}
+- tapOn:
+    id: "table-name-input"
+- inputText: "Bot Arena"
+- tapOn: "Create table"
+- assertVisible: "Waiting for players…"
+- tapOn: "Add bot"
+- assertVisible: "Ada \\(bot\\)"
+- tapOn: "Add bot"
+- assertVisible: "Bender \\(bot\\)"
+# the hand starts automatically once two or more players are seated
+- extendedWaitUntil:
+    visible: ".*Hand #1"
+    timeout: 10000
+- assertVisible: "Pot: .*"
+- runFlow: common/play_hand.yaml
+# the hand log explains why the winner won
+- assertVisible: ".* wins \\d+ with .*\\((.* beats .*|Split pot.*)\\)"
+# nobody folds, so the board must contain five community cards and a winning hand
+- assertVisible: ".* wins \\d+ with .*"
+- assertVisible: ".* shows .*"
+# a new hand is dealt automatically
+- extendedWaitUntil:
+    visible: ".*Hand #2"
+    timeout: 15000
+- tapOn: "Leave table"
+- assertVisible: "Welcome, ${PLAYER_NAME}"

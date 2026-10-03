@@ -1,0 +1,29 @@
+url: ${APP_URL}
+name: Multiplayer - join a table opened by another player over WebSockets
+tags:
+  - multiplayer
+env:
+  APP_URL: http://localhost:8090
+  PLAYER_NAME: Browser Bea
+---
+# requires e2e/remote-player.js to be running (run.sh starts it)
+- runFlow:
+    file: common/login.yaml
+    env:
+      PLAYER_NAME: ${PLAYER_NAME}
+- extendedWaitUntil:
+    visible: "Remote Table"
+    timeout: 10000
+- assertVisible: "1/6 players.*"
+- tapOn:
+    id: "join-remote-table"
+- assertVisible: "Remote Rita"
+- assertVisible: "Browser Bea"
+- extendedWaitUntil:
+    visible: ".*Hand #\\d+"
+    timeout: 10000
+- runFlow: common/play_hand.yaml
+- tapOn: "Leave table"
+- assertVisible: "Welcome, ${PLAYER_NAME}"
+# the remote player's table is still open in the lobby
+- assertVisible: "Remote Table"

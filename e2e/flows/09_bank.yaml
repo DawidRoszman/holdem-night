@@ -1,0 +1,96 @@
+url: ${APP_URL}
+name: Bank - register, buy chips, buy in at a table and cash out
+tags:
+  - accounts
+env:
+  APP_URL: http://localhost:8090
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Connected"
+    timeout: 10000
+- runFlow:
+    when:
+      visible:
+        id: "logout-button"
+    commands:
+      - tapOn:
+          id: "logout-button"
+# a brand-new account every run, so the balances below are exact
+- evalScript: ${output.user = 'Banker ' + Math.floor(Math.random() * 1000000)}
+- tapOn:
+    id: "username-input"
+- inputText: ${output.user}
+- tapOn:
+    id: "password-input"
+- inputText: "bank-secret"
+- tapOn:
+    id: "register-button"
+- extendedWaitUntil:
+    visible: "Welcome, ${output.user}"
+    timeout: 10000
+# the welcome bonus, then a pack from the shop
+- assertVisible:
+    id: "shop-balance"
+    text: "1,000"
+- tapOn:
+    id: "buy-500"
+- assertVisible: "Bought 500 chips"
+- assertVisible:
+    id: "bank-amount"
+    text: "1,500"
+# sit down with 1,200: it leaves the bank and becomes the stack at the table
+- tapOn:
+    id: "buy-in-input"
+- eraseText: 10
+- inputText: "1200"
+- tapOn:
+    id: "table-name-input"
+- inputText: "Vault"
+- tapOn: "Create table"
+- assertVisible:
+    id: "table-title"
+    text: "Vault"
+- assertVisible:
+    id: "bank-amount"
+    text: "300"
+- assertVisible: "1200 chips"
+# leaving pays the stack back
+- tapOn: "Leave table"
+- extendedWaitUntil:
+    visible:
+      id: "bank-amount"
+      text: "1,500"
+    timeout: 5000
+# the balance is stored with the account: log out, fail a login, then log back in
+- tapOn:
+    id: "logout-button"
+# the username stays filled in after logging out; only the password is cleared
+- tapOn:
+    id: "password-input"
+- inputText: "not-my-password"
+- tapOn:
+    id: "login-button"
+- assertVisible: "Wrong username or password"
+- tapOn:
+    id: "password-input"
+- eraseText: 20
+- inputText: "bank-secret"
+- tapOn:
+    id: "login-button"
+- extendedWaitUntil:
+    visible: "Welcome, ${output.user}"
+    timeout: 10000
+- assertVisible:
+    id: "shop-balance"
+    text: "1,500"
+# a buy-in larger than the bank is refused
+- tapOn:
+    id: "buy-in-input"
+- eraseText: 10
+- inputText: "5000"
+- tapOn: "Create table"
+- assertVisible: "Not enough chips in your bank"
+- assertNotVisible:
+    id: "table-title"

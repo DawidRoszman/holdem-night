@@ -1,0 +1,40 @@
+url: ${APP_URL}
+name: Cheat sheet - hand rankings modal opens during a hand
+tags:
+  - ui
+env:
+  APP_URL: http://localhost:8090
+  PLAYER_NAME: Curious Cleo
+---
+- runFlow:
+    file: common/login.yaml
+    env:
+      PLAYER_NAME: ${PLAYER_NAME}
+- tapOn:
+    id: "table-name-input"
+- inputText: "Study Hall"
+- tapOn: "Create table"
+- tapOn: "Add bot"
+- extendedWaitUntil:
+    visible: "Your turn"
+    timeout: 15000
+- assertNotVisible: "Royal Flush"
+- tapOn:
+    id: "rankings-button"
+- assertVisible:
+    id: "rankings-title"
+- assertVisible: "Royal Flush"
+- assertVisible: "A, K, Q, J, 10, all of the same suit."
+- assertVisible: "Four of a Kind"
+- assertVisible: "Two Pair"
+- takeScreenshot: rankings-modal
+- assertVisible: "High Card"
+- tapOn:
+    id: "rankings-close"
+- assertNotVisible: "Royal Flush"
+# the game carries on underneath the modal
+- assertVisible: "Your turn"
+- tapOn:
+    id: "fold-button"
+- assertVisible: "Ada \\(bot\\) wins 30"
+- tapOn: "Leave table"

@@ -1,0 +1,44 @@
+url: ${APP_URL}
+name: Gameplay - raising, and server-side rejection of an illegal raise
+tags:
+  - gameplay
+env:
+  APP_URL: http://localhost:8090
+  PLAYER_NAME: Raising Rae
+---
+- runFlow:
+    file: common/login.yaml
+    env:
+      PLAYER_NAME: ${PLAYER_NAME}
+- tapOn:
+    id: "table-name-input"
+- inputText: "Raise Room"
+- tapOn: "Create table"
+- tapOn: "Add bot"
+- extendedWaitUntil:
+    visible: "Your turn"
+    timeout: 15000
+# a raise below the minimum (to 40) is rejected by the game service
+- tapOn:
+    id: "raise-input"
+- eraseText: 10
+- inputText: "25"
+- tapOn:
+    id: "raise-button"
+- assertVisible: "Minimum raise is to 40"
+# a legal raise is accepted and the bot calls it
+- tapOn:
+    id: "raise-input"
+- eraseText: 10
+- inputText: "100"
+- tapOn:
+    id: "raise-button"
+- extendedWaitUntil:
+    visible: ".*Raising Rae raises to 100.*"
+    timeout: 5000
+- extendedWaitUntil:
+    visible: ".*Ada \\(bot\\) calls 80.*"
+    timeout: 5000
+- assertVisible: "Pot: 200"
+- runFlow: common/play_hand.yaml
+- tapOn: "Leave table"

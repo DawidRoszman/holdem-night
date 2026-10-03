@@ -1,0 +1,33 @@
+url: ${APP_URL}
+name: Gameplay - folding hands the pot to the opponent
+tags:
+  - gameplay
+env:
+  APP_URL: http://localhost:8090
+  PLAYER_NAME: Folding Fred
+---
+- runFlow:
+    file: common/login.yaml
+    env:
+      PLAYER_NAME: ${PLAYER_NAME}
+- tapOn:
+    id: "table-name-input"
+- inputText: "Fold Club"
+- tapOn: "Create table"
+- tapOn: "Add bot"
+- extendedWaitUntil:
+    visible: "Your turn"
+    timeout: 15000
+# heads-up: the button posts the small blind and acts first, facing 10 to call
+- assertVisible: "Call 10"
+- assertVisible: "Pot: 30"
+- tapOn:
+    id: "fold-button"
+- assertVisible: "Ada \\(bot\\) wins 30"
+# the result banner spells out what it cost us
+- assertVisible:
+    id: "result-detail"
+    text: "You lost 10 chips this hand"
+- assertVisible: "\u221210"
+- assertVisible: ".*Folding Fred folds.*"
+- tapOn: "Leave table"

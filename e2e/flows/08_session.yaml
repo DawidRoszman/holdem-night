@@ -1,0 +1,36 @@
+url: ${APP_URL}
+name: Session - the login survives a refresh until the player logs out
+tags:
+  - smoke
+env:
+  APP_URL: http://localhost:8090
+  PLAYER_NAME: Remember Rosa
+---
+- runFlow:
+    file: common/login.yaml
+    env:
+      PLAYER_NAME: ${PLAYER_NAME}
+- assertVisible:
+    id: "user-name"
+    text: "${PLAYER_NAME}"
+# reload the page: no login prompt, straight back to the lobby
+- openLink: ${APP_URL}
+- extendedWaitUntil:
+    visible: "Welcome, ${PLAYER_NAME}"
+    timeout: 10000
+- assertNotVisible:
+    id: "password-input"
+# log out: back to the login screen, and a reload keeps it that way
+- tapOn:
+    id: "logout-button"
+- assertVisible:
+    id: "password-input"
+- assertNotVisible:
+    id: "logout-button"
+- openLink: ${APP_URL}
+- extendedWaitUntil:
+    visible: "Connected"
+    timeout: 10000
+- assertVisible:
+    id: "password-input"
+- assertNotVisible: "Welcome, ${PLAYER_NAME}"

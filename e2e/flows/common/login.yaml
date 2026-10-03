@@ -1,0 +1,42 @@
+# Opens the app and signs in as ${PLAYER_NAME}: creates the account on the
+# first run, logs into it on later runs, then tops up the bank.
+url: ${APP_URL}
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Connected"
+    timeout: 10000
+# the session is remembered per tab; start each flow from the login screen
+- runFlow:
+    when:
+      visible:
+        id: "logout-button"
+    commands:
+      - tapOn:
+          id: "logout-button"
+- assertVisible: "Texas Hold'em"
+- tapOn:
+    id: "username-input"
+- inputText: ${PLAYER_NAME}
+- tapOn:
+    id: "password-input"
+- inputText: "e2e-secret"
+- tapOn:
+    id: "register-button"
+- extendedWaitUntil:
+    visible: "Welcome, ${PLAYER_NAME}|That username is taken"
+    timeout: 10000
+- runFlow:
+    when:
+      visible: "That username is taken"
+    commands:
+      - tapOn:
+          id: "login-button"
+- extendedWaitUntil:
+    visible: "Welcome, ${PLAYER_NAME}"
+    timeout: 10000
+# buy chips before playing, so repeated runs never run the bank dry
+- tapOn:
+    id: "buy-1000"
+- assertVisible: "Bought 1,000 chips"

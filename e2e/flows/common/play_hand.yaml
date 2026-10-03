@@ -1,0 +1,26 @@
+# Checks or calls every decision until the current hand finishes.
+url: ${APP_URL}
+---
+- repeat:
+    times: 40
+    while:
+      notVisible: ".* wins .*"
+    commands:
+      - extendedWaitUntil:
+          visible: "Your turn|.* wins .*"
+          timeout: 15000
+      - runFlow:
+          when:
+            visible:
+              id: "check-button"
+          commands:
+            - tapOn:
+                id: "check-button"
+      - runFlow:
+          when:
+            visible:
+              id: "call-button"
+          commands:
+            - tapOn:
+                id: "call-button"
+- assertVisible: ".* wins .*"
