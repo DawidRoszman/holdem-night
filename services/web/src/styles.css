@@ -361,7 +361,7 @@
   .seat.folded .cards { @apply opacity-60; }
   .seat .pname { @apply flex items-center justify-center gap-1 truncate text-sm font-bold; }
   .seat .chips { @apply font-medium text-muted-foreground tabular-nums; }
-  .seat .cards { @apply my-1 flex min-h-12 justify-center gap-1; }
+  .seat .cards { @apply my-1 flex min-h-15 justify-center gap-1; }
   .seat .bet { @apply min-h-4 font-semibold text-primary tabular-nums; }
   .seat .tag {
     @apply inline-grid size-5 shrink-0 place-items-center rounded-full bg-primary text-[10px] font-black text-primary-foreground shadow [text-shadow:none];
@@ -381,7 +381,7 @@
       #c5a37a;
   }
   .board .card { @apply animate-[deal_220ms_ease-out]; }
-  .seat .card { @apply h-12 w-8.5 text-[15px]; }
+  .seat .card { @apply h-15 w-10.5 text-lg; }
 
   /* ---------------------------------------------------------- poker chips */
   .chip {
@@ -499,7 +499,7 @@
     .felt { @apply aspect-[1/1.15] rounded-[40%/30%]; }
     .felt-3d { @apply aspect-[4/5]; }
     .seat { @apply w-27 text-[11px]; }
-    .seat .card { @apply h-10 w-7 text-[12px]; }
+    .seat .card { @apply h-12 w-8.5 text-sm; }
     .card { @apply h-14 w-10 text-base; }
     .chip:not(.edge) { @apply size-4.5; }
     .chip.edge { @apply h-1 w-4.5; }
