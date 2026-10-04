@@ -517,6 +517,30 @@
     /* no room for the words in the header: the dot shows the state, screen readers still get the text */
     .connection { @apply gap-0 p-1.5 text-[0px]; }
   }
+
+  /* wide screens: the game fits the viewport without scrolling. The table takes the
+     height that's left and keeps its aspect ratio, the hand log scrolls in a side column. */
+  @media (width >= 80rem) {
+    body:has(#screen-table:not([hidden])) header > div,
+    main:has(> #screen-table:not([hidden])) { @apply max-w-[1800px]; }
+    main:has(> #screen-table:not([hidden])) { @apply py-3; }
+    #screen-table:not([hidden]) {
+      @apply grid h-[calc(100dvh-57px-1.5rem)] grid-cols-[minmax(0,1fr)_22rem] grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-x-4;
+    }
+    #screen-table > :nth-child(-n+2) { @apply col-span-2; }
+    #screen-table > .felt-wrap { @apply col-start-1 min-h-0 [container-type:size]; }
+    #screen-table > .felt-wrap > #felt { @apply mx-auto max-h-full; }
+    #screen-table > .felt-wrap > .felt-3d { width: min(100%, 100cqh * 16 / 9); }
+    #screen-table > .felt-wrap > .felt { width: min(100%, 100cqh * 2); }
+    #screen-table > .table-dock { @apply col-start-1 flex min-h-20 flex-col justify-end gap-2; }
+    #screen-table > .table-dock > .result-banner { @apply mb-0; }
+    #screen-table > .log { @apply col-start-2 row-span-2 row-start-3 mt-0 min-h-0 overflow-hidden; }
+    @supports selector(::details-content) {
+      #screen-table > .log[open] { @apply flex flex-col; }
+      #screen-table > .log::details-content { @apply flex min-h-0 flex-1 flex-col; }
+      #screen-table > .log ol { @apply max-h-none min-h-0 flex-1; }
+    }
+  }
 }
 
 @keyframes deal {

@@ -139,29 +139,31 @@
         </div>
       </div>
 
-      <div id="result-banner" class="result-banner" role="status" aria-live="polite" hidden>
-        <span id="result-icon" class="result-icon" aria-hidden="true"></span>
-        <div class="min-w-0 flex-1">
-          <p id="result-title" class="result-title"></p>
-          <p id="result-detail" class="result-detail"></p>
+      <div class="table-dock">
+        <div id="result-banner" class="result-banner" role="status" aria-live="polite" hidden>
+          <span id="result-icon" class="result-icon" aria-hidden="true"></span>
+          <div class="min-w-0 flex-1">
+            <p id="result-title" class="result-title"></p>
+            <p id="result-detail" class="result-detail"></p>
+          </div>
+          <div id="result-cards" class="result-cards" aria-label="Winning hand" hidden></div>
+          <div id="result-actions" class="flex shrink-0 gap-2" hidden>
+            <button id="bust-leave-inline" type="button" class="btn btn-secondary">Back to lobby</button>
+            <button id="rebuy-inline" type="button" class="btn btn-primary">Rebuy</button>
+          </div>
         </div>
-        <div id="result-cards" class="result-cards" aria-label="Winning hand" hidden></div>
-        <div id="result-actions" class="flex shrink-0 gap-2" hidden>
-          <button id="bust-leave-inline" type="button" class="btn btn-secondary">Back to lobby</button>
-          <button id="rebuy-inline" type="button" class="btn btn-primary">Rebuy</button>
-        </div>
-      </div>
 
-      <div id="actions" class="panel flex flex-wrap items-center justify-center gap-2 p-3" hidden>
-        <span id="turn-timer" class="turn-timer" role="timer" hidden></span>
-        <button id="fold-button" type="button" class="btn btn-destructive">Fold</button>
-        <button id="check-button" type="button" class="btn btn-secondary">Check</button>
-        <button id="call-button" type="button" class="btn btn-secondary">Call</button>
-        <div class="flex gap-1.5">
-          <input id="raise-input" type="number" inputmode="numeric" class="input w-28 tabular-nums" aria-label="Raise amount">
-          <button id="raise-button" type="button" class="btn btn-primary">Raise</button>
+        <div id="actions" class="panel flex flex-wrap items-center justify-center gap-2 p-3" hidden>
+          <span id="turn-timer" class="turn-timer" role="timer" hidden></span>
+          <button id="fold-button" type="button" class="btn btn-destructive">Fold</button>
+          <button id="check-button" type="button" class="btn btn-secondary">Check</button>
+          <button id="call-button" type="button" class="btn btn-secondary">Call</button>
+          <div class="flex gap-1.5">
+            <input id="raise-input" type="number" inputmode="numeric" class="input w-28 tabular-nums" aria-label="Raise amount">
+            <button id="raise-button" type="button" class="btn btn-primary">Raise</button>
+          </div>
+          <button id="allin-button" type="button" class="btn btn-warning">All-in</button>
         </div>
-        <button id="allin-button" type="button" class="btn btn-warning">All-in</button>
       </div>
 
       <details class="log panel mt-4 px-4 py-3" open>
