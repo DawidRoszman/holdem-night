@@ -1199,7 +1199,7 @@ import { Table3D } from './table3d.js';
       const from = you(t.from);
       return item([
         span(`${from} ${from === 'You' ? 'pay' : 'pays'} ${you(t.to) === 'You' ? 'you' : t.to}`, 'font-semibold'),
-        span(`${formatChips(t.amount)} chips`, 'text-sm text-muted-foreground'),
+        span(`${formatChips(t.amount)} chips`, 'text-base text-muted-foreground'),
         span(amount, 'amount'),
       ]);
     }));

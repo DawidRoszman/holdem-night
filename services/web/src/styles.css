@@ -113,7 +113,7 @@
   .btn {
     --edge: rgb(0 0 0 / 0.55);
     @apply relative inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-[5px] border-2 border-transparent px-5
-      text-[15px] font-bold tracking-[0.06em] whitespace-nowrap [font-variant-caps:all-small-caps]
+      text-base font-bold tracking-[0.06em] whitespace-nowrap [font-variant-caps:all-small-caps]
       transition-[background-color,box-shadow,transform,color] duration-100 select-none
       disabled:pointer-events-none disabled:opacity-40;
     box-shadow: 0 3px 0 var(--edge);
@@ -152,16 +152,16 @@
     box-shadow: inset 0 2px 3px rgb(40 28 15 / 0.18);
   }
   .label {
-    @apply mb-1.5 block text-sm font-medium text-muted-foreground;
+    @apply mb-1.5 block text-base font-medium text-muted-foreground;
   }
   .auth-error {
-    @apply rounded-[5px] border-2 border-destructive/60 bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive;
+    @apply rounded-[5px] border-2 border-destructive/60 bg-destructive/10 px-3 py-2 text-base font-semibold text-destructive;
   }
 
   /* ---------------------------------------------------------- bank */
   /* balance pill in the header: a little gold chip and the amount */
   .bank {
-    @apply inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-primary/50 px-2.5 py-0.5 text-sm font-bold text-primary
+    @apply inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-primary/50 px-2.5 py-0.5 text-base font-bold text-primary
       transition-colors hover:bg-primary/10;
   }
   .bank-chip {
@@ -220,7 +220,7 @@
     box-shadow: inset 0 1px 0 rgb(255 250 240 / 0.45), inset 0 -2px 0 rgb(60 40 20 / 0.25), 0 24px 48px -16px rgb(0 0 0 / 0.7);
   }
   .badge {
-    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium;
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-base font-medium;
   }
 
   /* the logo and title go back to the home page (the lobby, or the login screen) */
@@ -229,14 +229,14 @@
 
   /* your initial (and name, on wider screens) in the header opens the profile */
   .profile-chip {
-    @apply inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-full px-1 text-sm text-muted-foreground
+    @apply inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-full px-1 text-base text-muted-foreground
       transition-colors hover:text-foreground disabled:cursor-default disabled:opacity-50;
   }
   .profile-chip:not(:disabled):hover #user-name { @apply underline underline-offset-4; }
 
   /* ---------------------------------------------------------- connection pill */
   .connection {
-    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium text-muted-foreground;
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-base font-medium text-muted-foreground;
   }
   .connection::before {
     content: "";
@@ -257,9 +257,9 @@
   }
   .lobby-row .details { @apply flex min-w-0 flex-1 flex-col gap-0.5; }
   .lobby-row .name { @apply truncate font-semibold; }
-  .lobby-row .meta { @apply text-sm text-muted-foreground tabular-nums; }
+  .lobby-row .meta { @apply text-base text-muted-foreground tabular-nums; }
   .lobby-row .live {
-    @apply ml-2 inline-flex items-center gap-1 rounded-[4px] border border-current px-1.5 text-xs font-bold text-success;
+    @apply ml-2 inline-flex items-center gap-1 rounded-[4px] border border-current px-1.5 text-base font-bold text-success;
   }
 
   /* table type: two carved tiles, the chosen one pressed in */
@@ -271,46 +271,46 @@
   .mode-option:has(:focus-visible) { @apply outline-2 outline-offset-2 outline-ring; }
   .mode-name { @apply font-bold; }
   .mode-option:has(:checked) .mode-name::before { content: "\2713\00a0"; }
-  .mode-desc { @apply text-sm text-muted-foreground; }
+  .mode-desc { @apply text-base text-muted-foreground; }
   .mode-badge {
-    @apply inline-flex items-center rounded-[4px] border border-current px-1.5 text-xs font-bold whitespace-nowrap;
+    @apply inline-flex items-center rounded-[4px] border border-current px-1.5 text-base font-bold whitespace-nowrap;
   }
   .lobby-row .mode-badge { @apply ml-2; }
   .mode-badge.practice { @apply text-warning; }
 
   /* ---------------------------------------------------------- profile */
-  .section-title { @apply text-xs font-bold tracking-[0.14em] text-muted-foreground uppercase; }
+  .section-title { @apply text-base font-bold tracking-[0.14em] text-muted-foreground uppercase; }
   .stat-grid { @apply grid grid-cols-2 gap-px overflow-hidden rounded-lg border-2 border-foreground/25 bg-foreground/25 sm:grid-cols-4; }
   .stat { @apply flex flex-col gap-1 bg-[color-mix(in_oklab,var(--card),white_14%)] px-4 py-3; }
-  .stat dt { @apply text-xs font-medium text-muted-foreground; }
+  .stat dt { @apply text-base font-medium text-muted-foreground; }
   .stat dd { @apply text-xl font-bold tabular-nums sm:text-2xl; }
   .stat dd.up { color: #1a5f96; }
   .stat dd.down { color: #a8401c; }
   /* its own line under the number, with compact spacing instead of the number's tall line height */
-  .stat .sub { @apply mt-1 block text-xs leading-snug font-medium text-muted-foreground; }
+  .stat .sub { @apply mt-1 block text-base leading-snug font-medium text-muted-foreground; }
   .stat .sub + .sub { @apply mt-0.5; }
 
   /* charts inherit the engraved ink for axes, grid and the balance line */
   .chart {
-    @apply min-h-[260px] text-xs text-foreground [text-shadow:none];
+    @apply min-h-[260px] text-base text-foreground [text-shadow:none];
     --ts-chart-tooltip-background: #f7f1e3;
     --ts-chart-tooltip-color: #15110c;
     --ts-chart-tooltip-border: 1px solid rgb(40 28 15 / 0.35);
     --ts-chart-tooltip-border-radius: 0.375rem;
     --ts-chart-tooltip-shadow: 0 10px 24px -8px rgb(0 0 0 / 0.5);
   }
-  .chart-tooltip { @apply text-xs leading-relaxed font-medium tabular-nums whitespace-pre-line; }
-  .legend { @apply flex gap-4 text-sm font-medium; }
+  .chart-tooltip { @apply text-base leading-relaxed font-medium tabular-nums whitespace-pre-line; }
+  .legend { @apply flex gap-4 text-base font-medium; }
   .legend li { @apply flex items-center gap-1.5; }
   .swatch { @apply inline-block size-3 rounded-[3px]; }
   .swatch.win { background: #1a5f96; }
   .swatch.loss { background: #a8401c; }
   .empty-note {
-    @apply border-y-2 border-dashed border-foreground/25 px-4 py-8 text-center text-sm font-medium text-muted-foreground;
+    @apply border-y-2 border-dashed border-foreground/25 px-4 py-8 text-center text-base font-medium text-muted-foreground;
   }
 
-  .history { @apply w-full text-sm; }
-  .history th { @apply border-b-2 border-foreground/30 px-2 py-2 text-left text-xs font-bold text-muted-foreground; }
+  .history { @apply w-full text-base; }
+  .history th { @apply border-b-2 border-foreground/30 px-2 py-2 text-left text-base font-bold text-muted-foreground; }
   .history td { @apply border-b border-foreground/15 px-2 py-2 align-top whitespace-nowrap; }
   .history td:first-child { @apply max-w-48 truncate font-semibold; }
   .history .num { @apply text-right tabular-nums; }
@@ -322,8 +322,8 @@
   .history tr.you td { @apply bg-foreground/5; }
   .hands td { @apply align-middle; }
   .mini-cards { @apply flex gap-0.5; }
-  .mini-cards .card { @apply h-7 w-5 rounded-[3px] text-[11px] shadow-sm; }
-  .hands .outcome { @apply min-w-56 whitespace-normal text-xs; }
+  .mini-cards .card { @apply h-9 w-7 rounded-[3px] text-base shadow-sm; }
+  .hands .outcome { @apply min-w-56 whitespace-normal text-base; }
   .settle-list { @apply space-y-2; }
   .settle-list li { @apply flex flex-wrap items-baseline gap-x-2 rounded-lg border-2 border-foreground/20 px-4 py-2; }
   .settle-list .amount { @apply ml-auto text-lg font-bold tabular-nums; }
@@ -353,18 +353,18 @@
   }
   .seat {
     @apply absolute w-38 -translate-x-1/2 -translate-y-1/2 rounded-lg border-2 border-border px-2 py-1.5
-      text-center text-xs shadow-lg shadow-black/50 transition-[opacity,box-shadow,border-color];
+      text-center text-base shadow-lg shadow-black/50 transition-[opacity,box-shadow,border-color];
   }
   .seat.me { @apply border-primary/70; }
   .seat.turn { @apply border-[#3f5a2a] shadow-[0_0_0_3px_#9db979,0_0_22px_#9db979aa]; }
   .seat.folded { @apply opacity-80 saturate-50; }
   .seat.folded .cards { @apply opacity-60; }
-  .seat .pname { @apply flex items-center justify-center gap-1 truncate text-sm font-bold; }
+  .seat .pname { @apply flex items-center justify-center gap-1 truncate text-base font-bold; }
   .seat .chips { @apply font-medium text-muted-foreground tabular-nums; }
   .seat .cards { @apply my-1 flex min-h-15 justify-center gap-1; }
   .seat .bet { @apply min-h-4 font-semibold text-primary tabular-nums; }
   .seat .tag {
-    @apply inline-grid size-5 shrink-0 place-items-center rounded-full bg-primary text-[10px] font-black text-primary-foreground shadow [text-shadow:none];
+    @apply inline-grid size-6 shrink-0 place-items-center rounded-full bg-primary text-base font-black text-primary-foreground shadow [text-shadow:none];
   }
 
   /* ---------------------------------------------------------- playing cards */
@@ -383,7 +383,7 @@
   .board .card { @apply animate-[deal_220ms_ease-out]; }
   .seat .card { @apply h-15 w-10.5 text-lg; }
   /* your own seat is bigger so your hole cards are easy to read */
-  .seat.me { @apply w-46 text-sm; }
+  .seat.me { @apply w-46 text-base; }
   .seat.me .pname { @apply text-base; }
   .seat.me .cards { @apply min-h-20; }
   .seat.me .card { @apply h-20 w-14 text-2xl; }
@@ -416,7 +416,7 @@
   }
   .chip-col .chip:first-child { @apply relative z-10; }
   .chip-amount {
-    @apply rounded-[4px] bg-black/70 px-2 text-xs font-bold text-foreground tabular-nums empty:hidden;
+    @apply rounded-[4px] bg-black/70 px-2 text-base font-bold text-foreground tabular-nums empty:hidden;
   }
   .chip-stack.on-felt {
     @apply pointer-events-auto absolute z-10 -translate-x-1/2 -translate-y-1/2 animate-[chip-in_240ms_ease-out];
@@ -443,33 +443,33 @@
   .result-banner.loss .result-icon { @apply text-destructive; }
   .result-title { @apply text-lg font-bold tracking-tight; }
   .result-banner.win .result-title { @apply text-success; }
-  .result-detail { @apply text-sm font-medium text-muted-foreground; }
+  .result-detail { @apply text-base font-medium text-muted-foreground; }
 
   .result-cards { @apply flex shrink-0 gap-1; }
-  .result-cards .card { @apply h-11 w-8 text-sm; }
+  .result-cards .card { @apply h-12 w-9 text-base; }
   .card.win-card { @apply -translate-y-1 ring-3 ring-primary shadow-lg shadow-primary/40 transition-transform; }
   .card.dim-card { @apply opacity-40 saturate-50; }
-  .seat .hand-label { @apply mb-0.5 truncate text-[11px] font-semibold text-primary; }
+  .seat .hand-label { @apply mb-0.5 truncate text-base font-semibold text-primary; }
 
   .seat.winner { @apply shadow-[0_0_0_3px_#e2b866,0_0_26px_#e2b866aa]; }
   .seat.busted { @apply opacity-60 grayscale; }
   .seat.away { @apply border-dashed opacity-75; }
-  .seat .away-label { @apply text-[11px] font-bold text-warning; }
+  .seat .away-label { @apply text-base font-bold text-warning; }
   .seat .delta {
-    @apply absolute -top-3 -right-3 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums shadow-md shadow-black/40
+    @apply absolute -top-3 -right-3 rounded-full px-2 py-0.5 text-base font-bold tabular-nums shadow-md shadow-black/40
       animate-[chip-in_240ms_ease-out];
   }
   .seat .delta.up { @apply bg-success text-primary-foreground; }
   .seat .delta.down { @apply bg-destructive text-destructive-foreground; }
 
   /* ---------------------------------------------------------- timers */
-  .table-rules { @apply mt-1 text-sm text-muted-foreground; }
+  .table-rules { @apply mt-1 text-base text-muted-foreground; }
   /* drains while the seat's player is thinking */
   .turn-clock { @apply mt-1 h-1.5 overflow-hidden rounded-full bg-foreground/20; }
   /* steps down once a second with the countdown: no animation, so the page is still in between */
   .turn-clock > span { @apply block h-full rounded-full bg-success; }
   .turn-clock.urgent > span { @apply bg-destructive; }
-  .turn-timer { @apply min-w-24 text-center text-sm font-bold tabular-nums; }
+  .turn-timer { @apply min-w-24 text-center text-base font-bold tabular-nums; }
   .turn-timer.urgent { @apply text-destructive; }
   .toast.info { @apply border-foreground/30 bg-primary text-primary-foreground; }
 
@@ -488,14 +488,14 @@
   }
   .rankings .rank-no { @apply row-span-2 font-bold text-primary tabular-nums; }
   .rankings .rank-name { @apply font-semibold; }
-  .rankings .rank-desc { @apply col-start-2 text-[13px] text-muted-foreground; }
+  .rankings .rank-desc { @apply col-start-2 text-base text-muted-foreground; }
   .rankings .rank-cards { @apply col-start-3 row-span-2 row-start-1 flex gap-0.5; }
-  .rankings .card { @apply h-8 w-6 text-[11px]; }
+  .rankings .card { @apply h-10 w-7.5 text-base; }
 
   /* ---------------------------------------------------------- toast */
   .toast {
     @apply fixed bottom-6 left-1/2 z-50 max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-lg border border-destructive/40
-      bg-destructive px-4 py-3 text-sm font-semibold text-destructive-foreground shadow-xl shadow-black/40 animate-[pop_160ms_ease-out];
+      bg-destructive px-4 py-3 text-base font-semibold text-destructive-foreground shadow-xl shadow-black/40 animate-[pop_160ms_ease-out];
   }
 }
 
@@ -503,9 +503,9 @@
   @media (max-width: 40rem) {
     .felt { @apply aspect-[1/1.15] rounded-[40%/30%]; }
     .felt-3d { @apply aspect-[4/5]; }
-    .seat { @apply w-27 text-[11px]; }
-    .seat .card { @apply h-12 w-8.5 text-sm; }
-    .seat.me { @apply w-34 text-xs; }
+    .seat { @apply w-30 text-base; }
+    .seat .card { @apply h-12 w-8.5 text-base; }
+    .seat.me { @apply w-36 text-base; }
     .seat.me .cards { @apply min-h-16; }
     .seat.me .card { @apply h-16 w-11 text-lg; }
     .card { @apply h-14 w-10 text-base; }
