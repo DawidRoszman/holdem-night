@@ -382,6 +382,11 @@
   }
   .board .card { @apply animate-[deal_220ms_ease-out]; }
   .seat .card { @apply h-15 w-10.5 text-lg; }
+  /* your own seat is bigger so your hole cards are easy to read */
+  .seat.me { @apply w-46 text-sm; }
+  .seat.me .pname { @apply text-base; }
+  .seat.me .cards { @apply min-h-20; }
+  .seat.me .card { @apply h-20 w-14 text-2xl; }
 
   /* ---------------------------------------------------------- poker chips */
   .chip {
@@ -500,6 +505,9 @@
     .felt-3d { @apply aspect-[4/5]; }
     .seat { @apply w-27 text-[11px]; }
     .seat .card { @apply h-12 w-8.5 text-sm; }
+    .seat.me { @apply w-34 text-xs; }
+    .seat.me .cards { @apply min-h-16; }
+    .seat.me .card { @apply h-16 w-11 text-lg; }
     .card { @apply h-14 w-10 text-base; }
     .chip:not(.edge) { @apply size-4.5; }
     .chip.edge { @apply h-1 w-4.5; }
