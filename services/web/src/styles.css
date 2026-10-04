@@ -352,7 +352,7 @@
       0 18px 40px -12px oklch(0 0 0 / 0.7);
   }
   .seat {
-    @apply absolute w-34 -translate-x-1/2 -translate-y-1/2 rounded-lg border-2 border-border px-2 py-1.5
+    @apply absolute w-38 -translate-x-1/2 -translate-y-1/2 rounded-lg border-2 border-border px-2 py-1.5
       text-center text-xs shadow-lg shadow-black/50 transition-[opacity,box-shadow,border-color];
   }
   .seat.me { @apply border-primary/70; }
@@ -361,7 +361,7 @@
   .seat.folded .cards { @apply opacity-60; }
   .seat .pname { @apply flex items-center justify-center gap-1 truncate text-sm font-bold; }
   .seat .chips { @apply font-medium text-muted-foreground tabular-nums; }
-  .seat .cards { @apply my-1 flex min-h-10 justify-center gap-1; }
+  .seat .cards { @apply my-1 flex min-h-12 justify-center gap-1; }
   .seat .bet { @apply min-h-4 font-semibold text-primary tabular-nums; }
   .seat .tag {
     @apply inline-grid size-5 shrink-0 place-items-center rounded-full bg-primary text-[10px] font-black text-primary-foreground shadow [text-shadow:none];
@@ -369,7 +369,7 @@
 
   /* ---------------------------------------------------------- playing cards */
   .card {
-    @apply inline-flex h-16 w-11 items-center justify-center rounded-md bg-card-face text-lg font-bold text-suit-black
+    @apply inline-flex h-19 w-13 items-center justify-center rounded-md bg-card-face text-xl font-bold text-suit-black
       shadow-md shadow-black/40 ring-1 ring-black/10 [text-shadow:none];
   }
   .card.red { @apply text-suit-red; }
@@ -381,7 +381,7 @@
       #c5a37a;
   }
   .board .card { @apply animate-[deal_220ms_ease-out]; }
-  .seat .card { @apply h-10 w-7.5 text-[13px]; }
+  .seat .card { @apply h-12 w-8.5 text-[15px]; }
 
   /* ---------------------------------------------------------- poker chips */
   .chip {
@@ -498,9 +498,9 @@
   @media (max-width: 40rem) {
     .felt { @apply aspect-[1/1.15] rounded-[40%/30%]; }
     .felt-3d { @apply aspect-[4/5]; }
-    .seat { @apply w-24 text-[11px]; }
-    .seat .card { @apply h-8.5 w-6 text-[11px]; }
-    .card { @apply h-12 w-8.5 text-sm; }
+    .seat { @apply w-27 text-[11px]; }
+    .seat .card { @apply h-10 w-7 text-[12px]; }
+    .card { @apply h-14 w-10 text-base; }
     .chip:not(.edge) { @apply size-4.5; }
     .chip.edge { @apply h-1 w-4.5; }
     .chip-stack.pot .chip:not(.edge) { @apply size-5; }
